@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -31,7 +32,7 @@ class LLMClient:
         if self.provider in ("openai", "ollama"):
             client = openai.OpenAI(
                 base_url=self.base_url,
-                api_key="ollama",  # required by openai SDK even for local endpoints
+                api_key=os.environ.get("OPENAI_API_KEY", "ollama"),  # env var for real OpenAI, fallback for local endpoints
             )
             response = client.chat.completions.create(
                 model=self.model,

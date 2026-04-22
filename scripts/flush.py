@@ -84,7 +84,7 @@ def flush(
 
     logging.info("flush triggered — project=%s raw=%s chars=%d", project_id, raw_file.name, len(content))
 
-    prompt = FLUSH_PROMPT.format(transcript=content)
+    prompt = FLUSH_PROMPT.replace("{transcript}", content)
     client = LLMClient.from_config(config, stage="flush")
 
     try:

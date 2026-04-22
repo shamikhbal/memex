@@ -63,7 +63,7 @@ def compile_project(project_id: str, memex_dir: Optional[Path] = None) -> None:
     for f in sorted(note_files):
         notes_content += f"\n\n### {f.stem}\n\n{f.read_text()}"
 
-    prompt = INDEX_PROMPT.format(project_id=project_id, notes_content=notes_content.strip())
+    prompt = INDEX_PROMPT.replace("{project_id}", project_id).replace("{notes_content}", notes_content.strip())
     client = LLMClient.from_config(config, stage="compile")
 
     try:
