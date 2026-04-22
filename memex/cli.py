@@ -74,7 +74,7 @@ def doctor(memex_dir: Optional[str]) -> None:
         try:
             settings = json.loads(settings_path.read_text())
             raw = json.dumps(settings.get("hooks", {}))
-            hooks_ok = "session" in raw.lower() and "flush" in raw.lower()
+            hooks_ok = "session-end" in raw and "session-start" in raw
         except Exception:
             pass
     row(hooks_ok, "hooks", "registered" if hooks_ok else "not registered — run: memex install")
