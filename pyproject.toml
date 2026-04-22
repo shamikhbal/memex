@@ -8,6 +8,11 @@ dependencies = [
     "click>=8.1",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
 [project.scripts]
 memex = "memex.cli:main"
 
