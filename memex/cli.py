@@ -11,6 +11,7 @@ from typing import Optional
 import click
 
 from memex.config import Config
+from memex.installer import create_memex_dir, merge_hooks, write_default_config
 
 
 @click.group()
@@ -119,3 +120,39 @@ def inject(memex_dir: Optional[str], cwd: str) -> None:
     )
     if context:
         click.echo(context)
+
+
+@main.command()
+@click.option("--memex-dir", envvar="MEMEX_DIR", default=None, type=click.Path())
+def install(memex_dir: Optional[str]) -> None:
+    """Create ~/.memex/ structure and register Claude Code hooks."""
+    resolved_memex = Path(memex_dir) if memex_dir else Path.home() / ".memex"
+    repo_root = Path(__file__).parent.parent
+    hooks_dir = repo_root / "hooks"
+    hook_commands = {
+        "SessionEnd": str(hooks_dir / "session-end.py"),
+        "PreCompact": str(hooks_dir / "pre-compact.py"),
+        "SessionStart": str(hooks_dir / "session-start.py"),
+    }
+    settings_path = Path.home() / ".claude" / "settings.json"
+
+    created_dirs = create_memex_dir(resolved_memex)
+    if created_dirs:
+        for d in created_dirs:
+            click.echo(f"  \u2713  created {d}")
+    else:
+        click.echo("  \u2013  ~/.memex/ directories already exist")
+
+    wrote_config = write_default_config(resolved_memex)
+    if wrote_config:
+        click.echo(f"  \u2713  wrote {resolved_memex / 'config.yaml'}")
+    else:
+        click.echo(f"  \u2013  config.yaml already exists, skipped")
+
+    hooks_changed = merge_hooks(settings_path, hook_commands)
+    if hooks_changed:
+        click.echo(f"  \u2713  registered hooks in {settings_path}")
+    else:
+        click.echo(f"  \u2013  hooks already registered in {settings_path}")
+
+    click.echo("\nmemex install complete. Start a new Claude Code session to activate.")
