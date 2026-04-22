@@ -88,3 +88,25 @@ def test_doctor_reports_last_flush_timestamp(tmp_memex: Path):
         result = runner.invoke(main, ["doctor", "--memex-dir", str(tmp_memex)])
     flush_line = next(ln for ln in result.output.splitlines() if "last flush" in ln)
     assert "never" not in flush_line
+
+
+def test_inject_returns_empty_when_no_notes(tmp_memex: Path, tmp_path: Path):
+    from memex.cli import main
+    runner = CliRunner()
+    result = runner.invoke(main, ["inject", "--memex-dir", str(tmp_memex), "--cwd", str(tmp_path)])
+    assert result.exit_code == 0
+    assert result.output.strip() == ""
+
+
+def test_inject_shows_index_content(tmp_memex: Path, tmp_path: Path):
+    from memex.cli import main
+    runner = CliRunner()
+    notes = tmp_memex / "notes" / "projects" / "test-proj"
+    notes.mkdir(parents=True, exist_ok=True)
+    (notes / "_index.md").write_text("project index content\n")
+
+    with patch("memex.project_id.get_project_id", return_value="test-proj"):
+        result = runner.invoke(main, ["inject", "--memex-dir", str(tmp_memex), "--cwd", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "project index content" in result.output

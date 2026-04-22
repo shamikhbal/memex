@@ -98,3 +98,24 @@ def doctor(memex_dir: Optional[str]) -> None:
     compile_str = datetime.fromtimestamp(last_compile).strftime("%Y-%m-%d %H:%M") if last_compile else "never"
     click.echo(f"  –  last flush: {flush_str}")
     click.echo(f"  –  last compile: {compile_str}")
+
+
+@main.command()
+@click.option("--memex-dir", envvar="MEMEX_DIR", default=None, type=click.Path())
+@click.option("--cwd", default=".", type=click.Path(), help="Project directory (defaults to CWD)")
+def inject(memex_dir: Optional[str], cwd: str) -> None:
+    """Preview what session-start would inject into the context window."""
+    from memex.inject import build_context
+    from memex.project_id import get_project_id
+
+    config = Config(memex_dir=Path(memex_dir) if memex_dir else Path.home() / ".memex")
+    project_id = get_project_id(Path(cwd))
+    graph_json = config.graph_dir / "graph.json"
+
+    context = build_context(
+        config,
+        project_id,
+        graph_json=graph_json if graph_json.exists() else None,
+    )
+    if context:
+        click.echo(context)

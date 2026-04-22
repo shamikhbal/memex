@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """
 SessionStart hook — injects knowledge from ~/.memex/notes/ into session context.
-Priority order (capped at max_inject_chars):
-  1. notes/projects/{project-id}/_index.md
-  2. notes/projects/{project-id}/decisions.md
-  3. notes/daily/YYYY-MM-DD.md (today)
-  4. Top 3 notes/concepts/ by most-recently-modified
+
+Budget allocation (of max_inject_chars):
+  _index.md      35%
+  decisions.md   15%
+  daily note     20%
+  concepts       remaining
+
+Auto-triggers compile.py when last compile is from a previous day and
+the hour has passed compile_after_hour.
 """
 from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 if os.environ.get("CLAUDE_INVOKED_BY"):
@@ -22,20 +27,23 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from memex.config import Config
+from memex.inject import build_context
 from memex.project_id import get_project_id
+from memex.state import ProjectState
 
 MEMEX_DIR = Path(os.environ.get("MEMEX_DIR", Path.home() / ".memex"))
 config = Config(memex_dir=MEMEX_DIR)
 
 
-def read_capped(path: Path, budget: int) -> tuple[str, int]:
-    """Read file content up to budget chars. Returns (content, chars_used)."""
-    if not path.exists():
-        return "", 0
-    text = path.read_text(encoding="utf-8")
-    if len(text) > budget:
-        text = text[:budget]
-    return text, len(text)
+def _compile_needed(state: ProjectState) -> bool:
+    """Return True if compile.py should run before injection."""
+    now = datetime.now()
+    if now.hour < config.compile_after_hour:
+        return False
+    if state.last_compile_timestamp is None:
+        return True
+    last = datetime.fromtimestamp(state.last_compile_timestamp)
+    return last.date() < date.today()
 
 
 def main() -> None:
@@ -48,41 +56,22 @@ def main() -> None:
     cwd = Path(cwd_str)
     project_id = get_project_id(cwd)
 
-    notes = config.notes_dir
-    budget = config.max_inject_chars
-    sections: list[str] = []
+    state = ProjectState(state_dir=config.state_dir, project_id=project_id)
 
-    priority_files = [
-        notes / "projects" / project_id / "_index.md",
-        notes / "projects" / project_id / "decisions.md",
-        notes / "daily" / f"{date.today().isoformat()}.md",
-    ]
+    if _compile_needed(state):
+        compile_script = ROOT / "scripts" / "compile.py"
+        subprocess.run(
+            [sys.executable, str(compile_script), project_id],
+            env={**os.environ, "MEMEX_DIR": str(MEMEX_DIR)},
+            timeout=120,
+        )
 
-    for p in priority_files:
-        if budget <= 0:
-            break
-        content, used = read_capped(p, budget)
-        if content:
-            sections.append(f"## {p.name}\n\n{content}")
-            budget -= used
-
-    # Top 3 concept notes by recency
-    concepts_dir = notes / "concepts"
-    if concepts_dir.exists() and budget > 0:
-        concept_files = sorted(
-            concepts_dir.glob("*.md"),
-            key=lambda f: f.stat().st_mtime,
-            reverse=True,
-        )[:3]
-        for p in concept_files:
-            if budget <= 0:
-                break
-            content, used = read_capped(p, budget)
-            if content:
-                sections.append(f"## {p.stem}\n\n{content}")
-                budget -= used
-
-    context = "\n\n---\n\n".join(sections) if sections else ""
+    graph_json = config.graph_dir / "graph.json"
+    context = build_context(
+        config,
+        project_id,
+        graph_json=graph_json if graph_json.exists() else None,
+    )
 
     output = {
         "hookSpecificOutput": {
