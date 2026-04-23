@@ -99,6 +99,16 @@ Idempotent setup command — safe to run multiple times. Creates `~/.memex/` str
 memex install
 ```
 
+### `memex uninstall`
+Remove memex hooks from Claude Code settings. Your notes and data in `~/.memex/` are kept by default.
+
+```bash
+memex uninstall                  # removes hooks, keeps ~/.memex/ intact
+memex uninstall --delete-data    # also deletes ~/.memex/ (irreversible)
+```
+
+Prompts for confirmation before making any changes. Restart Claude Code after running for changes to take effect.
+
 ---
 
 ## What gets captured

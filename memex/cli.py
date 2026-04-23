@@ -11,7 +11,7 @@ from typing import Optional
 import click
 
 from memex.config import Config
-from memex.installer import create_memex_dir, merge_hooks, write_default_config
+from memex.installer import create_memex_dir, merge_hooks, remove_hooks, write_default_config
 
 
 @click.group()
@@ -124,15 +124,77 @@ def inject(memex_dir: Optional[str], cwd: str) -> None:
 
 @main.command()
 @click.option("--memex-dir", envvar="MEMEX_DIR", default=None, type=click.Path())
+@click.argument("question", nargs=-1, required=True)
+def query(memex_dir: Optional[str], question: tuple[str, ...]) -> None:
+    """Query the knowledge graph. Usage: memex query what decisions were made?"""
+    config = Config(memex_dir=Path(memex_dir) if memex_dir else Path.home() / ".memex")
+    graph_json = config.graph_dir / "graph.json"
+
+    if not graph_json.exists():
+        click.echo(f"  ✗  graph.json not found at {graph_json}. Run 'memex compile' first.", err=True)
+        sys.exit(1)
+
+    subprocess.run(["graphify", "query", " ".join(question), "--graph", str(graph_json)])
+
+
+@main.command()
+@click.option("--memex-dir", envvar="MEMEX_DIR", default=None, type=click.Path())
+@click.argument("nodes", nargs=2, required=True)
+def path(memex_dir: Optional[str], nodes: tuple[str, str]) -> None:
+    """Find shortest path between two nodes. Usage: memex path "node A" "node B" """
+    config = Config(memex_dir=Path(memex_dir) if memex_dir else Path.home() / ".memex")
+    graph_json = config.graph_dir / "graph.json"
+
+    if not graph_json.exists():
+        click.echo(f"  ✗  graph.json not found at {graph_json}. Run 'memex compile' first.", err=True)
+        sys.exit(1)
+
+    subprocess.run(["graphify", "path", nodes[0], nodes[1], "--graph", str(graph_json)])
+
+
+@main.command()
+@click.option("--memex-dir", envvar="MEMEX_DIR", default=None, type=click.Path())
+@click.argument("node", required=True)
+def explain(memex_dir: Optional[str], node: str) -> None:
+    """Explain a node and its neighbors. Usage: memex explain "hook installer" """
+    config = Config(memex_dir=Path(memex_dir) if memex_dir else Path.home() / ".memex")
+    graph_json = config.graph_dir / "graph.json"
+
+    if not graph_json.exists():
+        click.echo(f"  ✗  graph.json not found at {graph_json}. Run 'memex compile' first.", err=True)
+        sys.exit(1)
+
+    subprocess.run(["graphify", "explain", node, "--graph", str(graph_json)])
+
+
+@main.command()
+@click.option("--memex-dir", envvar="MEMEX_DIR", default=None, type=click.Path())
+@click.argument("project_id", required=False)
+def compile(memex_dir: Optional[str], project_id: Optional[str]) -> None:
+    """Compile project notes into _index.md and update the knowledge graph."""
+    from memex.project_id import get_project_id
+    from memex.scripts.compile import compile_project
+
+    resolved_memex = Path(memex_dir) if memex_dir else Path.home() / ".memex"
+
+    if not project_id:
+        project_id = get_project_id(Path.cwd())
+
+    click.echo(f"  compiling project: {project_id}")
+    compile_project(project_id=project_id, memex_dir=resolved_memex)
+    click.echo(f"  ✓  done")
+
+
+@main.command()
+@click.option("--memex-dir", envvar="MEMEX_DIR", default=None, type=click.Path())
 def install(memex_dir: Optional[str]) -> None:
     """Create ~/.memex/ structure and register Claude Code hooks."""
     resolved_memex = Path(memex_dir) if memex_dir else Path.home() / ".memex"
-    repo_root = Path(__file__).parent.parent
-    hooks_dir = repo_root / "hooks"
+    hooks_dir = Path(__file__).parent / "hooks"
     hook_commands = {
-        "SessionEnd": str(hooks_dir / "session-end.py"),
-        "PreCompact": str(hooks_dir / "pre-compact.py"),
-        "SessionStart": str(hooks_dir / "session-start.py"),
+        "SessionEnd": f"{sys.executable} {hooks_dir / 'session-end.py'}",
+        "PreCompact": f"{sys.executable} {hooks_dir / 'pre-compact.py'}",
+        "SessionStart": f"{sys.executable} {hooks_dir / 'session-start.py'}",
     }
     settings_path = Path.home() / ".claude" / "settings.json"
 
@@ -156,3 +218,42 @@ def install(memex_dir: Optional[str]) -> None:
         click.echo(f"  \u2013  hooks already registered in {settings_path}")
 
     click.echo("\nmemex install complete. Start a new Claude Code session to activate.")
+
+
+@main.command()
+@click.option("--memex-dir", envvar="MEMEX_DIR", default=None, type=click.Path())
+@click.option(
+    "--delete-data",
+    is_flag=True,
+    default=False,
+    help="Also delete ~/.memex/ (notes, raw transcripts, state). Cannot be undone.",
+)
+@click.confirmation_option(prompt="Remove memex hooks from Claude Code settings?")
+def uninstall(memex_dir: Optional[str], delete_data: bool) -> None:
+    """Remove memex hooks from Claude Code settings (and optionally delete ~/.memex/)."""
+    hooks_dir = Path(__file__).parent / "hooks"
+    hook_commands = {
+        "SessionEnd": f"{sys.executable} {hooks_dir / 'session-end.py'}",
+        "PreCompact": f"{sys.executable} {hooks_dir / 'pre-compact.py'}",
+        "SessionStart": f"{sys.executable} {hooks_dir / 'session-start.py'}",
+    }
+    settings_path = Path.home() / ".claude" / "settings.json"
+
+    hooks_changed = remove_hooks(settings_path, hook_commands)
+    if hooks_changed:
+        click.echo(f"  ✓  removed hooks from {settings_path}")
+    else:
+        click.echo(f"  –  no memex hooks found in {settings_path}")
+
+    if delete_data:
+        resolved_memex = Path(memex_dir) if memex_dir else Path.home() / ".memex"
+        if resolved_memex.exists():
+            shutil.rmtree(resolved_memex)
+            click.echo(f"  ✓  deleted {resolved_memex}")
+        else:
+            click.echo(f"  –  {resolved_memex} not found, skipped")
+    else:
+        resolved_memex = Path(memex_dir) if memex_dir else Path.home() / ".memex"
+        click.echo(f"  –  kept {resolved_memex} (pass --delete-data to remove)")
+
+    click.echo("\nmemex uninstalled. Restart Claude Code for changes to take effect.")

@@ -13,6 +13,14 @@ def slugify_concept(text: str) -> str:
     return text.strip("-")
 
 
+def _format_wikilinks(related: list[str]) -> str:
+    """Format related concepts as Obsidian wikilinks."""
+    if not related:
+        return ""
+    links = " · ".join(f"[[{slugify_concept(r)}]]" for r in related)
+    return f"\n\nRelated: {links}\n"
+
+
 def append_item(
     tag: str,
     content: str,
@@ -20,6 +28,7 @@ def append_item(
     project_id: Optional[str],
     notes_dir: Path,
     today: Optional[date] = None,
+    related: Optional[list[str]] = None,
 ) -> None:
     """
     Append a single extracted item to the appropriate Obsidian note.
@@ -48,6 +57,7 @@ def append_item(
     dest.parent.mkdir(parents=True, exist_ok=True)
 
     entry = f"\n\n## {date_stamp}\n\n{content.strip()}\n"
+    entry += _format_wikilinks(related or [])
 
     with open(dest, "a", encoding="utf-8") as f:
         f.write(entry)

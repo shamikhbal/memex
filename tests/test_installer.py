@@ -97,6 +97,24 @@ def test_merge_hooks_is_idempotent(tmp_path: Path):
     assert cmds.count("/hooks/session-end.py") == 1
 
 
+def test_merge_hooks_replaces_stale_entries_on_reinstall(tmp_path: Path):
+    """Re-installing with a different path/interpreter must not accumulate duplicates."""
+    settings = tmp_path / "settings.json"
+    # First install: old venv / old path
+    merge_hooks(settings, {"SessionEnd": "/old/venv/python /old/hooks/session-end.py"})
+    # Second install: new venv / new path (same basename, different prefix)
+    changed = merge_hooks(settings, {"SessionEnd": "/new/venv/python /new/hooks/session-end.py"})
+    assert changed is True
+    data = json.loads(settings.read_text())
+    cmds = [
+        h["command"]
+        for entry in data["hooks"]["SessionEnd"]
+        for h in entry.get("hooks", [])
+    ]
+    assert len(cmds) == 1, f"Expected 1 entry, got {cmds}"
+    assert cmds[0] == "/new/venv/python /new/hooks/session-end.py"
+
+
 def test_merge_hooks_preserves_existing_hooks(tmp_path: Path):
     settings = tmp_path / "settings.json"
     existing = {

@@ -71,9 +71,36 @@ def _command_registered(hooks_list: list, command: str) -> bool:
     return False
 
 
+def _script_basename(command: str) -> str:
+    """Extract the hook script filename from a command string (last token)."""
+    return command.split()[-1].split("/")[-1]
+
+
+def _purge_stale_memex_entries(
+    event_list: list, basenames: set[str], current_commands: set[str]
+) -> tuple[list, bool]:
+    """
+    Remove entries whose command matches a memex script basename but is NOT
+    one of the current exact commands (i.e. stale path/interpreter).
+    Returns (filtered_list, changed).
+    """
+    filtered = [
+        entry for entry in event_list
+        if not any(
+            _script_basename(hook.get("command", "")) in basenames
+            and hook.get("command") not in current_commands
+            for hook in entry.get("hooks", [])
+        )
+    ]
+    return filtered, len(filtered) != len(event_list)
+
+
 def merge_hooks(settings_path: Path, hook_commands: dict[str, str]) -> bool:
     """
     Add memex hook entries to settings.json without removing existing hooks.
+
+    Stale memex entries (same hook script filename, different path/interpreter)
+    are removed before adding fresh entries to prevent accumulation on reinstall.
 
     hook_commands: {"EventName": "/absolute/path/to/hook.py", ...}
 
@@ -91,13 +118,64 @@ def merge_hooks(settings_path: Path, hook_commands: dict[str, str]) -> bool:
     hooks: dict = data.setdefault("hooks", {})
     changed = False
 
+    # Build set of hook script basenames we own (e.g. {"session-end.py", ...})
+    memex_basenames = {_script_basename(cmd) for cmd in hook_commands.values()}
+
     for event, command in hook_commands.items():
         event_list: list = hooks.setdefault(event, [])
+
+        # Remove stale memex entries for this event before checking/adding
+        cleaned, purged = _purge_stale_memex_entries(
+            event_list, memex_basenames, set(hook_commands.values())
+        )
+        if purged:
+            hooks[event] = cleaned
+            event_list = cleaned
+            changed = True
+
         if not _command_registered(event_list, command):
             event_list.append({
                 "matcher": "",
                 "hooks": [{"type": "command", "command": command}],
             })
+            changed = True
+
+    if changed:
+        settings_path.write_text(json.dumps(data, indent=2))
+
+    return changed
+
+
+def remove_hooks(settings_path: Path, hook_commands: dict[str, str]) -> bool:
+    """
+    Remove memex hook entries from settings.json.
+
+    hook_commands: {"EventName": "/absolute/path/to/hook.py", ...}
+
+    Returns True if any changes were made, False if nothing was registered.
+    """
+    if not settings_path.exists():
+        return False
+
+    try:
+        data: dict = json.loads(settings_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return False
+
+    hooks: dict = data.get("hooks", {})
+    commands_to_remove = set(hook_commands.values())
+    changed = False
+
+    for event, event_list in hooks.items():
+        filtered = [
+            entry for entry in event_list
+            if not any(
+                hook.get("command") in commands_to_remove
+                for hook in entry.get("hooks", [])
+            )
+        ]
+        if len(filtered) != len(event_list):
+            hooks[event] = filtered
             changed = True
 
     if changed:
