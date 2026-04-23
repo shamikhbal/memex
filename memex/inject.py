@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -15,6 +16,19 @@ _FRACTIONS = {
     "daily": 0.20,
     # concepts gets whatever is left after project + daily
 }
+
+
+def _compact(text: str) -> str:
+    """Reduce token-wasting whitespace and decorative markdown for injection."""
+    # Strip bold markers: **text** → text
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    # Remove horizontal rules (---, ***, ___ with optional spaces)
+    text = re.sub(r"^[ \t]*[-*_]{3,}[ \t]*$", "", text, flags=re.MULTILINE)
+    # Collapse 3+ consecutive newlines to 2 (single blank line)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    # Strip trailing whitespace per line
+    text = re.sub(r"[ \t]+$", "", text, flags=re.MULTILINE)
+    return text.strip()
 
 
 def _tier_budget(max_inject_chars: int, tier: str) -> int:
@@ -92,33 +106,36 @@ def build_context(
     project_id: str,
     graph_json: Optional[Path] = None,
 ) -> str:
-    """
-    Build the injection context string from ~/.memex/notes/.
+    from memex.state import ProjectState
 
-    Budget allocation (of max_inject_chars):
-      - _index.md:     35%
-      - decisions.md:  15%
-      - daily note:    20%
-      - concepts:      remaining
-
-    Returns empty string if no notes exist.
-    """
     notes = config.notes_dir
     total = config.max_inject_chars
     sections: list[str] = []
 
-    # Project tier
+    # Derive project status
+    state = ProjectState(state_dir=config.state_dir, project_id=project_id)
+    status = state.derive_status(notes)
+
+    # Determine index budget based on status
+    if status in ("dormant", "completed"):
+        index_budget = _tier_budget(total, "index") // 2
+    else:
+        index_budget = _tier_budget(total, "index")
+
+    # Project tier — index always included
     index_path = notes / "projects" / project_id / "_index.md"
-    index_content, _ = _read_capped_lines(index_path, _tier_budget(total, "index"))
+    index_content, _ = _read_capped_lines(index_path, index_budget)
     if index_content:
         sections.append(f"## _index.md\n\n{index_content}")
 
-    decisions_path = notes / "projects" / project_id / "decisions.md"
-    decisions_content, _ = _read_capped_lines(decisions_path, _tier_budget(total, "decisions"))
-    if decisions_content:
-        sections.append(f"## decisions.md\n\n{decisions_content}")
+    # Decisions — only for active projects
+    if status == "active":
+        decisions_path = notes / "projects" / project_id / "decisions.md"
+        decisions_content, _ = _read_capped_lines(decisions_path, _tier_budget(total, "decisions"))
+        if decisions_content:
+            sections.append(f"## decisions.md\n\n{decisions_content}")
 
-    # Daily tier
+    # Daily tier — always included (not project-bound)
     daily_path = notes / "daily" / f"{date.today().isoformat()}.md"
     daily_content, _ = _read_capped_lines(daily_path, _tier_budget(total, "daily"))
     if daily_content:
@@ -136,4 +153,4 @@ def build_context(
             sections.append(f"## {p.stem}\n\n{content}")
             concepts_budget -= used
 
-    return "\n\n---\n\n".join(sections)
+    return _compact("\n\n".join(sections))

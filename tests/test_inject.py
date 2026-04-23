@@ -1,7 +1,7 @@
 # tests/test_inject.py
 import json
 import pytest
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from memex.config import Config
@@ -71,8 +71,9 @@ def test_build_context_returns_empty_when_no_notes(tmp_memex: Path):
 
 def test_build_context_includes_index_and_decisions(tmp_memex: Path):
     notes = make_notes(tmp_memex)
+    today = date.today().isoformat()
     (notes / "projects" / "test-proj" / "_index.md").write_text("project summary\n")
-    (notes / "projects" / "test-proj" / "decisions.md").write_text("arch decision\n")
+    (notes / "projects" / "test-proj" / "decisions.md").write_text(f"## {today}\n\narch decision\n")
     cfg = Config(memex_dir=tmp_memex)
     result = build_context(cfg, "test-proj")
     assert "project summary" in result
@@ -157,3 +158,51 @@ def test_build_context_falls_back_to_mtime_on_bad_graph(tmp_memex: Path):
     cfg = Config(memex_dir=tmp_memex)
     result = build_context(cfg, "test-proj", graph_json=bad_graph)
     assert result.index("newer concept") < result.index("older concept")
+
+
+# ── status-aware budget ───────────────────────────────────────────────────────
+
+def test_build_context_active_includes_all_tiers(tmp_memex: Path):
+    """Active project gets full budget: index + decisions."""
+    from memex.inject import build_context
+    config = Config(memex_dir=tmp_memex)
+    notes = tmp_memex / "notes"
+    proj = notes / "projects" / "test-proj"
+    proj.mkdir(parents=True, exist_ok=True)
+    today = date.today().isoformat()
+    (proj / "_index.md").write_text("Project overview.\n")
+    (proj / "decisions.md").write_text(f"## {today}\n\nA decision.\n")
+    context = build_context(config, "test-proj")
+    assert "Project overview" in context
+    assert "A decision" in context
+
+
+def test_build_context_paused_includes_index_only(tmp_memex: Path):
+    """Paused project gets index only, no decisions."""
+    from memex.inject import build_context
+    config = Config(memex_dir=tmp_memex)
+    notes = tmp_memex / "notes"
+    proj = notes / "projects" / "test-proj"
+    proj.mkdir(parents=True, exist_ok=True)
+    old_date = (date.today() - timedelta(days=15)).isoformat()
+    (proj / "_index.md").write_text("Project overview.\n")
+    (proj / "decisions.md").write_text(f"## {old_date}\n\nAn old decision.\n")
+    context = build_context(config, "test-proj")
+    assert "Project overview" in context
+    assert "An old decision" not in context
+
+
+def test_build_context_dormant_includes_index_capped(tmp_memex: Path):
+    """Dormant project gets index at half budget."""
+    from memex.inject import build_context
+    config = Config(memex_dir=tmp_memex)
+    notes = tmp_memex / "notes"
+    proj = notes / "projects" / "test-proj"
+    proj.mkdir(parents=True, exist_ok=True)
+    old_date = (date.today() - timedelta(days=60)).isoformat()
+    long_content = "x" * 10000 + "\n"
+    (proj / "_index.md").write_text(long_content)
+    (proj / "decisions.md").write_text(f"## {old_date}\n\nVery old decision.\n")
+    context = build_context(config, "test-proj")
+    assert len(context) < _tier_budget(config.max_inject_chars, "index")
+    assert "Very old decision" not in context
