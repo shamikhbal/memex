@@ -102,3 +102,89 @@ def test_appends_to_existing_note(tmp_memex: Path):
     text = dest.read_text()
     assert "Existing content." in text
     assert "New insight about spawning." in text
+
+
+def test_explore_with_project_routes_to_explore_file(tmp_memex: Path):
+    notes = tmp_memex / "notes"
+    append_item(
+        tag="EXPLORE",
+        content="What if we used GraphQL instead of REST?",
+        concept="API Design Ideas",
+        project_id="my-project",
+        notes_dir=notes,
+        today=date(2026, 4, 23),
+        related=["rest-api"],
+        extra_tags=["tech/graphql"],
+    )
+    dest = notes / "projects" / "my-project" / "explore-api-design-ideas.md"
+    assert dest.exists()
+    text = dest.read_text()
+    assert "type/exploration" in text
+    assert "GraphQL" in text
+    assert "## 2026-04-23" in text
+
+
+def test_explore_without_project_routes_to_daily(tmp_memex: Path):
+    notes = tmp_memex / "notes"
+    append_item(
+        tag="EXPLORE",
+        content="Random brainstorm about tooling.",
+        concept="tooling-ideas",
+        project_id=None,
+        notes_dir=notes,
+        today=date(2026, 4, 23),
+    )
+    dest = notes / "daily" / "2026-04-23.md"
+    assert dest.exists()
+    assert "tooling" in dest.read_text()
+
+
+def test_target_project_routes_decision_to_matched_project(tmp_memex: Path):
+    notes = tmp_memex / "notes"
+    (notes / "projects" / "memex").mkdir(parents=True, exist_ok=True)
+    append_item(
+        tag="DECISION",
+        content="Use sqlite for queue.",
+        concept="queue-storage",
+        project_id=None,
+        notes_dir=notes,
+        today=date(2026, 4, 23),
+        target_project="memex",
+    )
+    dest = notes / "projects" / "memex" / "decisions.md"
+    assert dest.exists()
+    assert "sqlite" in dest.read_text()
+
+
+def test_target_project_falls_back_to_daily_if_not_found(tmp_memex: Path):
+    notes = tmp_memex / "notes"
+    append_item(
+        tag="DECISION",
+        content="Use sqlite for something.",
+        concept="queue-storage",
+        project_id=None,
+        notes_dir=notes,
+        today=date(2026, 4, 23),
+        target_project="nonexistent-project",
+    )
+    assert not (notes / "projects" / "nonexistent-project").exists()
+    dest = notes / "daily" / "2026-04-23.md"
+    assert dest.exists()
+    assert "sqlite" in dest.read_text()
+
+
+def test_target_project_routes_insight_to_matched_project(tmp_memex: Path):
+    notes = tmp_memex / "notes"
+    (notes / "projects" / "memex").mkdir(parents=True, exist_ok=True)
+    append_item(
+        tag="INSIGHT",
+        content="Path.resolve() is needed before .name.",
+        concept="path-resolution",
+        project_id=None,
+        notes_dir=notes,
+        today=date(2026, 4, 23),
+        target_project="memex",
+    )
+    dest = notes / "projects" / "memex" / "path-resolution.md"
+    assert dest.exists()
+    assert "resolve()" in dest.read_text()
