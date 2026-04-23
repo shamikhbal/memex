@@ -185,6 +185,66 @@ def compile(memex_dir: Optional[str], project_id: Optional[str]) -> None:
     click.echo(f"  ✓  done")
 
 
+_VALID_STATUSES = {"active", "paused", "dormant", "completed"}
+
+
+@main.command()
+@click.option("--memex-dir", envvar="MEMEX_DIR", default=None, type=click.Path())
+@click.argument("project_id", required=False)
+@click.argument("new_status", required=False)
+def status(memex_dir: Optional[str], project_id: Optional[str], new_status: Optional[str]) -> None:
+    """Show or set project status. Usage: memex status [PROJECT] [STATUS|auto]"""
+    from memex.state import ProjectState
+
+    config = Config(memex_dir=Path(memex_dir) if memex_dir else Path.home() / ".memex")
+    projects_dir = config.notes_dir / "projects"
+
+    if not projects_dir.exists():
+        click.echo("No projects found.")
+        return
+
+    # Set or clear override
+    if project_id and new_status:
+        state = ProjectState(state_dir=config.state_dir, project_id=project_id)
+        if new_status == "auto":
+            state.clear_override()
+            state.save()
+            derived = state.derive_status(config.notes_dir)
+            click.echo(f"  {project_id}: override cleared -> {derived}")
+        elif new_status in _VALID_STATUSES:
+            state.set_override(new_status)
+            state.save()
+            click.echo(f"  {project_id}: set to {new_status}")
+        else:
+            click.echo(f"Invalid status: {new_status}. Use: {', '.join(sorted(_VALID_STATUSES))}, or auto", err=True)
+            sys.exit(1)
+        return
+
+    # Show single project
+    if project_id:
+        state = ProjectState(state_dir=config.state_dir, project_id=project_id)
+        derived = state.derive_status(config.notes_dir)
+        latest = state._latest_note_date(config.notes_dir)
+        latest_str = latest.isoformat() if latest else "never"
+        override_marker = " (override)" if state.status_override else ""
+        click.echo(f"  {project_id}: {derived}{override_marker}  last activity: {latest_str}")
+        return
+
+    # List all projects
+    project_dirs = sorted(d.name for d in projects_dir.iterdir() if d.is_dir())
+    if not project_dirs:
+        click.echo("No projects found.")
+        return
+
+    click.echo(f"  {'Project':<20} {'Status':<12} {'Last Activity'}")
+    for pid in project_dirs:
+        state = ProjectState(state_dir=config.state_dir, project_id=pid)
+        derived = state.derive_status(config.notes_dir)
+        latest = state._latest_note_date(config.notes_dir)
+        latest_str = latest.isoformat() if latest else "never"
+        click.echo(f"  {pid:<20} {derived:<12} {latest_str}")
+
+
 @main.command()
 @click.option("--memex-dir", envvar="MEMEX_DIR", default=None, type=click.Path())
 def install(memex_dir: Optional[str]) -> None:

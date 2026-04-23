@@ -4,6 +4,7 @@ import pytest
 from click.testing import CliRunner
 from pathlib import Path
 from unittest.mock import patch
+from datetime import date, timedelta
 
 
 def test_serve_errors_if_graphify_not_installed(tmp_memex: Path):
@@ -155,3 +156,78 @@ def test_inject_shows_index_content(tmp_memex: Path, tmp_path: Path):
 
     assert result.exit_code == 0
     assert "project index content" in result.output
+
+
+def test_status_list_shows_all_projects(tmp_memex: Path):
+    from memex.cli import main
+    runner = CliRunner()
+    notes = tmp_memex / "notes"
+    today = date.today().isoformat()
+
+    proj1 = notes / "projects" / "alpha"
+    proj1.mkdir(parents=True, exist_ok=True)
+    (proj1 / "decisions.md").write_text(f"## {today}\n\nDecision.\n")
+
+    old_date = (date.today() - timedelta(days=15)).isoformat()
+    proj2 = notes / "projects" / "beta"
+    proj2.mkdir(parents=True, exist_ok=True)
+    (proj2 / "decisions.md").write_text(f"## {old_date}\n\nOld decision.\n")
+
+    result = runner.invoke(main, ["status", "--memex-dir", str(tmp_memex)])
+    assert result.exit_code == 0
+    assert "alpha" in result.output
+    assert "active" in result.output
+    assert "beta" in result.output
+    assert "paused" in result.output
+
+
+def test_status_show_single_project(tmp_memex: Path):
+    from memex.cli import main
+    runner = CliRunner()
+    notes = tmp_memex / "notes"
+    today = date.today().isoformat()
+    proj = notes / "projects" / "memex"
+    proj.mkdir(parents=True, exist_ok=True)
+    (proj / "decisions.md").write_text(f"## {today}\n\nDecision.\n")
+
+    result = runner.invoke(main, ["status", "--memex-dir", str(tmp_memex), "memex"])
+    assert result.exit_code == 0
+    assert "memex" in result.output
+    assert "active" in result.output
+
+
+def test_status_set_override(tmp_memex: Path):
+    from memex.cli import main
+    from memex.state import ProjectState
+    runner = CliRunner()
+    notes = tmp_memex / "notes"
+    today = date.today().isoformat()
+    proj = notes / "projects" / "memex"
+    proj.mkdir(parents=True, exist_ok=True)
+    (proj / "decisions.md").write_text(f"## {today}\n\nDecision.\n")
+
+    result = runner.invoke(main, ["status", "--memex-dir", str(tmp_memex), "memex", "completed"])
+    assert result.exit_code == 0
+    assert "completed" in result.output
+
+    state = ProjectState(state_dir=tmp_memex / "state", project_id="memex")
+    assert state.status_override == "completed"
+
+
+def test_status_auto_clears_override(tmp_memex: Path):
+    from memex.cli import main
+    from memex.state import ProjectState
+    runner = CliRunner()
+    notes = tmp_memex / "notes"
+    today = date.today().isoformat()
+    proj = notes / "projects" / "memex"
+    proj.mkdir(parents=True, exist_ok=True)
+    (proj / "decisions.md").write_text(f"## {today}\n\nDecision.\n")
+
+    runner.invoke(main, ["status", "--memex-dir", str(tmp_memex), "memex", "completed"])
+    result = runner.invoke(main, ["status", "--memex-dir", str(tmp_memex), "memex", "auto"])
+    assert result.exit_code == 0
+    assert "active" in result.output
+
+    state = ProjectState(state_dir=tmp_memex / "state", project_id="memex")
+    assert state.status_override is None
