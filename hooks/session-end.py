@@ -64,7 +64,7 @@ def main() -> None:
         sys.exit(0)
 
     project_id = get_project_id(cwd)
-    raw_dir = config.raw_dir / project_id
+    raw_dir = config.raw_dir / (project_id or "_daily")
     raw_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -76,7 +76,7 @@ def main() -> None:
     # Spawn flush.py as a detached background process
     flush_script = ROOT / "scripts" / "flush.py"
     subprocess.Popen(
-        [sys.executable, str(flush_script), str(raw_file), project_id],
+        [sys.executable, str(flush_script), str(raw_file), project_id or ""],
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

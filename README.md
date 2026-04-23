@@ -83,6 +83,18 @@ memex inject
 memex inject --cwd /path/to/project
 ```
 
+### `memex status`
+Show project status or set a manual override. Status is auto-derived from note recency (`active` ≤7 days, `paused` ≤30 days, `dormant` otherwise) and controls injection budget.
+
+```bash
+memex status                        # list all projects with status and last activity
+memex status my-project             # show status for one project
+memex status my-project active      # pin to active
+memex status my-project auto        # clear override, revert to auto-derive
+```
+
+Valid statuses: `active`, `paused`, `dormant`, `completed`.
+
 ### `memex compile`
 Manually compile project notes into a project index (`_index.md`) and rebuild the knowledge graph. Normally this runs automatically after 6pm, but you can trigger it anytime.
 
@@ -144,11 +156,14 @@ Prompts for confirmation before making any changes. Restart Claude Code after ru
 ## What gets captured
 
 - **Decisions** — architecture choices, trade-offs, why you chose X over Y
+- **Insights** — lessons learned, debugging discoveries, how-tos worth remembering
 - **Patterns** — recurring approaches, conventions, things that work in your codebase
-- **Concepts** — domain knowledge, library patterns, project-specific terminology
+- **Explorations** — brainstorms, ideation, design space discussions worth revisiting
 - **Daily digest** — cross-project summary of what you worked on
 
 What gets **ignored**: tool outputs, file reads, boilerplate — only your actual thinking is kept.
+
+Items extracted outside a git project (e.g. from `~`) are always routed to the daily note. If the LLM recognises that an item belongs to a known project it routes it there automatically, even across sessions.
 
 ---
 
@@ -156,14 +171,16 @@ What gets **ignored**: tool outputs, file reads, boilerplate — only your actua
 
 memex never dumps everything into your context. It allocates a fixed budget (default 20,000 chars) split across source tiers:
 
-| Source | Budget |
-|--------|--------|
-| Project index (`_index.md`) | 35% |
-| Decisions log | 15% |
-| Today's daily note | 20% |
-| Top concepts (graph-ranked) | remaining |
+| Source | Budget | Notes |
+|--------|--------|-------|
+| Project index (`_index.md`) | 35% | halved for dormant projects |
+| Decisions log | 15% | active projects only |
+| Today's daily note | 20% | always included |
+| Top concepts (graph-ranked) | remaining | always included |
 
 Concept notes are ranked by graph connectivity — the most referenced ideas surface first.
+
+Project status (`active`, `paused`, `dormant`, `completed`) is derived automatically from note recency and controls how much project context is injected. Use `memex status` to view or override it.
 
 ---
 
@@ -248,7 +265,9 @@ session_start:
 
 memex uses your **git remote URL** as the project ID — not the folder name. This means projects survive renames and work correctly across machines.
 
-No git remote? Falls back to the directory name.
+No remote but inside a git repo? Falls back to the directory name.
+
+**No git repo at all?** (e.g. sessions started from `~` or a plain folder) — no project ID is assigned. All extracted notes go to the daily directory instead of a project folder.
 
 ---
 

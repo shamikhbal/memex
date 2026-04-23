@@ -31,15 +31,21 @@ from memex.config import Config
 from memex.llm_client import LLMClient
 
 INDEX_PROMPT = """\
-You are a knowledge base curator. Read all the notes below for the project "{project_id}" and write a concise _index.md — a living overview of this project.
+You are a knowledge base curator writing Obsidian-flavored Markdown. Read all the notes below for the project "{project_id}" and write a concise _index.md — a living overview.
 
-Include:
-- What the project does (1-2 sentences)
-- Key decisions made (bulleted)
-- Key concepts and patterns documented (bulleted)
-- Current status if determinable
+Output format (follow exactly):
 
-Be concise. Max 300 words. Use markdown. Do not include the date.
+1. YAML frontmatter with: title, tags (include project/{project_id} and relevant tech/* tags), status (active/paused/completed)
+2. A level-1 heading: # {{project name}} — Overview
+3. An Obsidian callout summarising what the project does:
+   > [!info] What is {{project}}?
+   > 1-2 sentence summary.
+4. A "Tech Stack" or "Architecture" section using a table if applicable
+5. "Key Decisions" section — bulleted, concise
+6. "Concepts & Patterns" section — bulleted, concise
+7. "Current Status" section — 1-2 sentences
+
+Be concise. Max 300 words of body content (excluding frontmatter). Use wikilinks ([[concept-name]]) when referencing concepts that have their own note files.
 
 Notes:
 {notes_content}"""

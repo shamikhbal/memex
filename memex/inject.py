@@ -103,7 +103,7 @@ def _select_concepts(
 
 def build_context(
     config: Config,
-    project_id: str,
+    project_id: Optional[str],
     graph_json: Optional[Path] = None,
 ) -> str:
     from memex.state import ProjectState
@@ -112,28 +112,29 @@ def build_context(
     total = config.max_inject_chars
     sections: list[str] = []
 
-    # Derive project status
-    state = ProjectState(state_dir=config.state_dir, project_id=project_id)
+    # Derive project status (use "_daily" sentinel when no project)
+    state = ProjectState(state_dir=config.state_dir, project_id=project_id or "_daily")
     status = state.derive_status(notes)
 
-    # Determine index budget based on status
-    if status in ("dormant", "completed"):
-        index_budget = _tier_budget(total, "index") // 2
-    else:
-        index_budget = _tier_budget(total, "index")
+    if project_id:
+        # Determine index budget based on status
+        if status in ("dormant", "completed"):
+            index_budget = _tier_budget(total, "index") // 2
+        else:
+            index_budget = _tier_budget(total, "index")
 
-    # Project tier — index always included
-    index_path = notes / "projects" / project_id / "_index.md"
-    index_content, _ = _read_capped_lines(index_path, index_budget)
-    if index_content:
-        sections.append(f"## _index.md\n\n{index_content}")
+        # Project tier — index always included
+        index_path = notes / "projects" / project_id / "_index.md"
+        index_content, _ = _read_capped_lines(index_path, index_budget)
+        if index_content:
+            sections.append(f"## _index.md\n\n{index_content}")
 
-    # Decisions — only for active projects
-    if status == "active":
-        decisions_path = notes / "projects" / project_id / "decisions.md"
-        decisions_content, _ = _read_capped_lines(decisions_path, _tier_budget(total, "decisions"))
-        if decisions_content:
-            sections.append(f"## decisions.md\n\n{decisions_content}")
+        # Decisions — only for active projects
+        if status == "active":
+            decisions_path = notes / "projects" / project_id / "decisions.md"
+            decisions_content, _ = _read_capped_lines(decisions_path, _tier_budget(total, "decisions"))
+            if decisions_content:
+                sections.append(f"## decisions.md\n\n{decisions_content}")
 
     # Daily tier — always included (not project-bound)
     daily_path = notes / "daily" / f"{date.today().isoformat()}.md"

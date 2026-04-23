@@ -22,6 +22,21 @@ def _git_remote(cwd: Path) -> Optional[str]:
         return None
 
 
+def _has_git_repo(cwd: Path) -> bool:
+    """Return True if cwd is inside a git repository."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
 def _slugify(text: str) -> str:
     """Convert arbitrary string to lowercase alphanumeric-and-hyphens slug."""
     text = text.lower()
@@ -35,9 +50,16 @@ def _slugify(text: str) -> str:
     return text.strip("-")
 
 
-def get_project_id(cwd: Path) -> str:
-    """Return a stable, filesystem-safe project identifier for the given directory."""
+def get_project_id(cwd: Path) -> Optional[str]:
+    """Return a stable, filesystem-safe project identifier for the given directory.
+
+    Returns None when cwd is not inside a git repository — notes will be
+    routed to the daily directory instead of a project folder.
+    """
+    cwd = cwd.resolve()
     remote = _git_remote(cwd)
     if remote:
         return _slugify(remote)
-    return _slugify(cwd.name)
+    if _has_git_repo(cwd):
+        return _slugify(cwd.name)
+    return None

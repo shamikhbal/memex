@@ -83,7 +83,7 @@ def _known_project_ids(notes_dir: Path) -> list[str]:
 
 def flush(
     raw_file: Path,
-    project_id: str,
+    project_id: Optional[str],
     memex_dir: Optional[Path] = None,
 ) -> None:
     """Extract knowledge from raw_file and append to Obsidian notes."""
@@ -91,7 +91,7 @@ def flush(
         memex_dir = Path.home() / ".memex"
 
     config = Config(memex_dir=memex_dir)
-    state = ProjectState(state_dir=config.state_dir, project_id=project_id)
+    state = ProjectState(state_dir=config.state_dir, project_id=project_id or "_daily")
 
     if not raw_file.exists():
         logging.info("raw file not found, skipping: %s", raw_file)
@@ -152,7 +152,7 @@ def flush(
         if compile_script.exists():
             logging.info("triggering compile.py (past %d:00 with new content)", config.compile_after_hour)
             subprocess.Popen(
-                [sys.executable, str(compile_script), project_id, str(memex_dir)],
+                [sys.executable, str(compile_script), project_id or "", str(memex_dir)],
                 start_new_session=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -165,7 +165,7 @@ def main() -> None:
         sys.exit(1)
 
     raw_file = Path(sys.argv[1])
-    project_id = sys.argv[2]
+    project_id = sys.argv[2] or None
     memex_dir_str = os.environ.get("MEMEX_DIR")
     memex_dir = Path(memex_dir_str) if memex_dir_str else None
 
