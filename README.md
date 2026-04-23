@@ -15,13 +15,13 @@ Five layers, fully automatic:
 ```
 Session ends
   → hooks/session-end.py captures the transcript
-  → scripts/flush.py (Haiku) extracts decisions, patterns, concepts → ~/.memex/notes/
-  → scripts/compile.py (Sonnet) rewrites project index nightly
+  → scripts/flush.py extracts decisions, patterns, concepts → ~/.memex/notes/
+  → scripts/compile.py rewrites project index + builds knowledge graph
   → hooks/session-start.py injects budgeted context into your next session
   → memex serve exposes the full knowledge graph as an MCP server
 ```
 
-Your notes live in `~/.memex/notes/` as plain Obsidian-compatible markdown — readable, portable, yours.
+Your notes live in `~/.memex/notes/` as plain Obsidian-compatible markdown with wikilinks — readable, portable, yours. Related concepts are automatically cross-linked with `[[wikilinks]]`, making the vault navigable in Obsidian's graph view.
 
 ---
 
@@ -37,7 +37,7 @@ Your notes live in `~/.memex/notes/` as plain Obsidian-compatible markdown — r
 - Python 3.11+
 - [uv](https://github.com/astral-sh/uv) (package manager)
 - Claude Code
-- An Anthropic API key (or any OpenAI-compatible endpoint — see [Custom providers](#custom-providers))
+- An LLM provider: Anthropic API key, Ollama (local or cloud), or any OpenAI-compatible endpoint — see [Custom providers](#custom-providers)
 
 ---
 
@@ -81,6 +81,36 @@ Preview exactly what would be injected into your next session context — useful
 ```bash
 memex inject
 memex inject --cwd /path/to/project
+```
+
+### `memex compile`
+Manually compile project notes into a project index (`_index.md`) and rebuild the knowledge graph. Normally this runs automatically after 6pm, but you can trigger it anytime.
+
+```bash
+memex compile              # compile current project (auto-detected from CWD)
+memex compile my-project   # compile a specific project by ID
+```
+
+### `memex query`
+Query the knowledge graph from the command line. No LLM call — uses graph traversal to find relevant nodes.
+
+```bash
+memex query what decisions were made about hooks?
+memex query ollama configuration
+```
+
+### `memex explain`
+Explain a node and its neighbors in the knowledge graph.
+
+```bash
+memex explain "hook installer"
+```
+
+### `memex path`
+Find the shortest path between two concepts in the graph.
+
+```bash
+memex path "merge hooks" "stale entries"
 ```
 
 ### `memex serve`
@@ -142,22 +172,49 @@ Concept notes are ranked by graph connectivity — the most referenced ideas sur
 memex supports any OpenAI-compatible endpoint (Ollama, Together, local models) alongside Anthropic. Configure per pipeline stage in `~/.memex/config.yaml`:
 
 ```yaml
+# Anthropic (default)
 flush:
   provider: anthropic
   model: claude-haiku-4-5-20251001
+  base_url: null
 
 compile:
-  provider: openai          # or "anthropic"
-  model: gpt-4o-mini
-  base_url: http://localhost:11434   # Ollama, etc.
+  provider: anthropic
+  model: claude-sonnet-4-6
+  base_url: null
+```
 
+```yaml
+# Ollama (local or cloud)
+flush:
+  provider: ollama
+  model: qwen3:8b                       # or any Ollama model
+  base_url: http://127.0.0.1:11434/v1
+
+compile:
+  provider: ollama
+  model: qwen3:14b
+  base_url: http://127.0.0.1:11434/v1
+```
+
+```yaml
+# OpenAI-compatible endpoint (Together, etc.)
+flush:
+  provider: openai
+  model: gpt-4o-mini
+  base_url: https://api.together.xyz/v1  # optional, defaults to OpenAI
+```
+
+Shared settings:
+
+```yaml
 pre_filter:
   max_context_chars: 15000
   max_turns: 30
 
 session_start:
   max_inject_chars: 20000
-  compile_after_hour: 18    # auto-compile triggers after 6pm
+  compile_after_hour: 18    # auto-compile triggers after 6pm (set to 0 for every session)
 ```
 
 ---
@@ -167,17 +224,20 @@ session_start:
 ```
 ~/.memex/
 ├── config.yaml
+├── flush.log                   # hook and pipeline logs
 ├── raw/                        # pre-filtered session transcripts
 │   └── {project-id}/
-├── notes/                      # your knowledge vault (Obsidian-compatible)
+├── notes/                      # Obsidian-compatible vault with [[wikilinks]]
 │   ├── projects/
 │   │   └── {project-id}/
 │   │       ├── _index.md       # auto-maintained project overview
-│   │       └── decisions.md   # append-only decision log
-│   ├── concepts/               # cross-project promoted concepts
+│   │       └── decisions.md    # append-only decision log
+│   ├── concepts/               # cross-project patterns (wikilinked)
 │   └── daily/                  # daily digests
 ├── graph/
-│   └── global/graphify-out/    # compiled knowledge graph
+│   └── global/graphify-out/
+│       ├── graph.json          # knowledge graph (graphify format)
+│       └── GRAPH_REPORT.md     # god nodes, communities, structure
 └── state/
     └── {project-id}.json       # timestamps, cost tracking
 ```
