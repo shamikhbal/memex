@@ -43,9 +43,15 @@ For each item, assign one tag:
 - DECISION: a non-obvious choice made (technology, architecture, approach) with clear rationale
 - INSIGHT: something learned that would be useful next time (how-to, debugging lesson, pattern)
 - PATTERN: a reusable cross-project pattern or technique
+- EXPLORE: brainstorm, ideation, or exploration — not a concrete decision or lesson, but worth capturing
 - SKIP: routine conversation, small talk, nothing worth keeping
 
-For each item, also list related concepts (other concept names this item connects to). Use short, lowercase, hyphenated names (e.g. "hook-installer", "ollama-config"). Only list genuinely related concepts — do not force connections.
+For each item also provide:
+- related: other concept names this item connects to. Use short, lowercase, hyphenated names (e.g. "hook-installer", "ollama-config"). Only list genuinely related concepts.
+- tags: 1-3 Obsidian-style tags describing the technology or domain (e.g. "tech/python", "domain/cli", "tech/git"). Do not include type/* or project/* tags — those are added automatically.
+- target_project: (optional) only set this if the item clearly belongs to one of the known projects listed below. Use the exact project name. Omit if no match.
+
+Known projects: {known_projects}
 
 Return ONLY valid JSON in this format:
 {{
@@ -54,7 +60,9 @@ Return ONLY valid JSON in this format:
       "tag": "DECISION",
       "concept": "short concept name (3-5 words)",
       "content": "clear, self-contained description of what was decided/learned/discovered",
-      "related": ["other-concept", "another-concept"]
+      "related": ["other-concept", "another-concept"],
+      "tags": ["tech/python", "domain/cli"],
+      "target_project": "project-name"
     }}
   ]
 }}
@@ -63,6 +71,14 @@ If nothing is worth keeping, return: {{"items": []}}
 
 Transcript:
 {transcript}"""
+
+
+def _known_project_ids(notes_dir: Path) -> list[str]:
+    """Return list of existing project directory names."""
+    projects_dir = notes_dir / "projects"
+    if not projects_dir.exists():
+        return []
+    return [d.name for d in projects_dir.iterdir() if d.is_dir()]
 
 
 def flush(
@@ -88,7 +104,10 @@ def flush(
 
     logging.info("flush triggered — project=%s raw=%s chars=%d", project_id, raw_file.name, len(content))
 
-    prompt = FLUSH_PROMPT.replace("{transcript}", content)
+    known = _known_project_ids(config.notes_dir)
+    prompt = FLUSH_PROMPT.replace("{transcript}", content).replace(
+        "{known_projects}", ", ".join(known) if known else "(none)"
+    )
     client = LLMClient.from_config(config, stage="flush")
 
     try:
@@ -114,7 +133,13 @@ def flush(
             project_id=project_id,
             notes_dir=config.notes_dir,
             related=item.get("related", []),
+            extra_tags=item.get("tags", []),
+            target_project=item.get("target_project"),
         )
+
+    written = [i for i in items if i.get("tag", "SKIP") != "SKIP" and i.get("content")]
+    if written:
+        state.clear_override()
 
     # Update state
     state.last_flush_session_id = raw_file.stem
