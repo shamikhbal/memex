@@ -12,6 +12,7 @@ os.environ["CLAUDE_INVOKED_BY"] = "memory_flush"
 
 import json
 import logging
+import re
 import subprocess
 import sys
 import time
@@ -73,6 +74,13 @@ Transcript:
 {transcript}"""
 
 
+def _extract_json(text: str) -> str:
+    """Strip markdown fences and extract the outermost {...} block."""
+    text = re.sub(r"```(?:json)?\s*", "", text).strip()
+    start, end = text.find("{"), text.rfind("}")
+    return text[start:end + 1] if start != -1 else text
+
+
 def _known_project_ids(notes_dir: Path) -> list[str]:
     """Return list of existing project directory names."""
     projects_dir = notes_dir / "projects"
@@ -112,7 +120,7 @@ def flush(
 
     try:
         response = client.complete(prompt=prompt, max_tokens=2048)
-        data = json.loads(response.text)
+        data = json.loads(_extract_json(response.text))
     except (json.JSONDecodeError, Exception) as e:
         logging.error("LLM response parse error: %s", e)
         return

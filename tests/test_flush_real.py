@@ -4,6 +4,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from memex.llm_client import LLMResponse
+from memex.scripts.flush import _extract_json
 
 
 def make_llm_response(items: list) -> LLMResponse:
@@ -175,3 +176,44 @@ def test_flush_clears_status_override_on_new_notes(tmp_memex: Path, tmp_path: Pa
 
     reloaded = ProjectState(state_dir=tmp_memex / "state", project_id="test-project")
     assert reloaded.status_override is None
+
+
+def test_extract_json_plain():
+    """Plain JSON passes through unchanged."""
+    raw = '{"items": []}'
+    assert _extract_json(raw) == '{"items": []}'
+
+
+def test_extract_json_strips_fences():
+    """JSON wrapped in ```json fences is extracted correctly."""
+    raw = '```json\n{"items": []}\n```'
+    result = _extract_json(raw)
+    import json
+    assert json.loads(result) == {"items": []}
+
+
+def test_extract_json_strips_plain_fences():
+    """JSON wrapped in plain ``` fences is extracted correctly."""
+    raw = '```\n{"items": [{"tag": "SKIP"}]}\n```'
+    result = _extract_json(raw)
+    import json
+    assert json.loads(result) == {"items": [{"tag": "SKIP"}]}
+
+
+def test_extract_json_strips_prose():
+    """JSON preceded by prose is extracted from the first { to last }."""
+    raw = 'Here is the JSON output:\n{"items": []}\nHope that helps!'
+    result = _extract_json(raw)
+    import json
+    assert json.loads(result) == {"items": []}
+
+
+def test_extract_json_empty_returns_empty():
+    """Empty string returns empty string (json.loads will raise, caught upstream)."""
+    assert _extract_json("") == ""
+
+
+def test_extract_json_no_braces_returns_original():
+    """Text with no braces returns the stripped text (json.loads will raise upstream)."""
+    result = _extract_json("not json at all")
+    assert result == "not json at all"
