@@ -12,6 +12,7 @@ os.environ["CLAUDE_INVOKED_BY"] = "memory_flush"
 
 import json
 import logging
+import re
 import subprocess
 import sys
 import time
@@ -20,8 +21,9 @@ from pathlib import Path
 from typing import Optional
 
 ROOT = Path(__file__).resolve().parent.parent
-LOG_FILE = ROOT / "scripts" / "flush.log"
-sys.path.insert(0, str(ROOT))
+LOG_FILE = Path(os.environ.get("MEMEX_DIR", Path.home() / ".memex")) / "flush.log"
+if not (ROOT / "__init__.py").exists():
+    sys.path.insert(0, str(ROOT))
 
 logging.basicConfig(
     filename=str(LOG_FILE),
@@ -72,6 +74,21 @@ Transcript:
 {transcript}"""
 
 
+def _extract_json(text: str) -> str:
+    """Strip markdown fences, extract the outermost {...} block, and repair common LLM JSON errors."""
+    # Strip markdown code fences
+    text = re.sub(r"```(?:json)?\s*", "", text).strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1:
+        return text
+    text = text[start:end + 1]
+    # Fix trailing commas before } or ]
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+    # Fix missing commas between objects in arrays: "}\n  {" → "},\n  {"
+    text = re.sub(r"}\s*\n(\s*\{)", r"},\n\1", text)
+    return text
+
+
 def _known_project_ids(notes_dir: Path) -> list[str]:
     """Return list of existing project directory names."""
     projects_dir = notes_dir / "projects"
@@ -110,8 +127,8 @@ def flush(
     client = LLMClient.from_config(config, stage="flush")
 
     try:
-        response = client.complete(prompt=prompt, max_tokens=2048)
-        data = json.loads(response.text)
+        response = client.complete(prompt=prompt, max_tokens=4096)
+        data = json.loads(_extract_json(response.text))
     except (json.JSONDecodeError, Exception) as e:
         logging.error("LLM response parse error: %s", e)
         return

@@ -28,7 +28,7 @@ MEMEX_DIR = Path(os.environ.get("MEMEX_DIR", Path.home() / ".memex"))
 config = Config(memex_dir=MEMEX_DIR)
 
 logging.basicConfig(
-    filename=str(ROOT / "scripts" / "flush.log"),
+    filename=str(MEMEX_DIR / "flush.log"),
     level=logging.INFO,
     format="%(asctime)s %(levelname)s [session-end] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
