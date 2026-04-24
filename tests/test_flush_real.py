@@ -13,9 +13,7 @@ def make_llm_response(items: list) -> LLMResponse:
 
 def test_flush_writes_decision_to_notes(tmp_memex: Path, tmp_path: Path):
     """flush() extracts a DECISION and writes it to the project decisions.md."""
-    import sys
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from scripts.flush import flush
+    from memex.scripts.flush import flush
 
     raw_content = "**User:** Should we use sqlite or jsonl?\n**Assistant:** Use jsonl for simplicity."
     raw_file = tmp_path / "20260422T120000Z.md"
@@ -27,7 +25,7 @@ def test_flush_writes_decision_to_notes(tmp_memex: Path, tmp_path: Path):
         "content": "Chose jsonl over sqlite for simplicity — no schema needed.",
     }])
 
-    with patch("scripts.flush.LLMClient") as MockClient:
+    with patch("memex.scripts.flush.LLMClient") as MockClient:
         MockClient.from_config.return_value.complete.return_value = mock_response
         flush(
             raw_file=raw_file,
@@ -41,9 +39,7 @@ def test_flush_writes_decision_to_notes(tmp_memex: Path, tmp_path: Path):
 
 
 def test_flush_writes_pattern_to_concepts(tmp_memex: Path, tmp_path: Path):
-    import sys
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from scripts.flush import flush
+    from memex.scripts.flush import flush
 
     raw_file = tmp_path / "20260422T120000Z.md"
     raw_file.write_text("**User:** How do I spawn detached?\n**Assistant:** Use start_new_session=True.")
@@ -54,7 +50,7 @@ def test_flush_writes_pattern_to_concepts(tmp_memex: Path, tmp_path: Path):
         "content": "Set start_new_session=True in Popen to fully detach the child process.",
     }])
 
-    with patch("scripts.flush.LLMClient") as MockClient:
+    with patch("memex.scripts.flush.LLMClient") as MockClient:
         MockClient.from_config.return_value.complete.return_value = mock_response
         flush(raw_file=raw_file, project_id="test-project", memex_dir=tmp_memex)
 
@@ -64,16 +60,14 @@ def test_flush_writes_pattern_to_concepts(tmp_memex: Path, tmp_path: Path):
 
 
 def test_flush_skips_empty_items(tmp_memex: Path, tmp_path: Path):
-    import sys
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from scripts.flush import flush
+    from memex.scripts.flush import flush
 
     raw_file = tmp_path / "20260422T120000Z.md"
     raw_file.write_text("**User:** hi\n**Assistant:** hello")
 
     mock_response = make_llm_response([])
 
-    with patch("scripts.flush.LLMClient") as MockClient:
+    with patch("memex.scripts.flush.LLMClient") as MockClient:
         MockClient.from_config.return_value.complete.return_value = mock_response
         flush(raw_file=raw_file, project_id="test-project", memex_dir=tmp_memex)
 
@@ -82,14 +76,12 @@ def test_flush_skips_empty_items(tmp_memex: Path, tmp_path: Path):
 
 def test_flush_handles_malformed_llm_response(tmp_memex: Path, tmp_path: Path):
     """If LLM returns non-JSON, flush logs and exits gracefully — no crash."""
-    import sys
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from scripts.flush import flush
+    from memex.scripts.flush import flush
 
     raw_file = tmp_path / "20260422T120000Z.md"
     raw_file.write_text("**User:** something\n**Assistant:** something else")
 
-    with patch("scripts.flush.LLMClient") as MockClient:
+    with patch("memex.scripts.flush.LLMClient") as MockClient:
         MockClient.from_config.return_value.complete.return_value = LLMResponse(text="not json at all")
         flush(raw_file=raw_file, project_id="test-project", memex_dir=tmp_memex)
 
@@ -99,9 +91,7 @@ def test_flush_handles_malformed_llm_response(tmp_memex: Path, tmp_path: Path):
 
 def test_flush_writes_explore_to_project(tmp_memex: Path, tmp_path: Path):
     """EXPLORE items route to project explore- files."""
-    import sys
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from scripts.flush import flush
+    from memex.scripts.flush import flush
 
     raw_file = tmp_path / "20260423T120000Z.md"
     raw_file.write_text("**User:** What if we used GraphQL?\n**Assistant:** That's an interesting idea.")
@@ -114,7 +104,7 @@ def test_flush_writes_explore_to_project(tmp_memex: Path, tmp_path: Path):
         "tags": ["tech/graphql"],
     }])
 
-    with patch("scripts.flush.LLMClient") as MockClient:
+    with patch("memex.scripts.flush.LLMClient") as MockClient:
         MockClient.from_config.return_value.complete.return_value = mock_response
         flush(raw_file=raw_file, project_id="test-project", memex_dir=tmp_memex)
 
@@ -125,9 +115,7 @@ def test_flush_writes_explore_to_project(tmp_memex: Path, tmp_path: Path):
 
 def test_flush_passes_target_project(tmp_memex: Path, tmp_path: Path):
     """Items with target_project get routed to the matching project."""
-    import sys
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from scripts.flush import flush
+    from memex.scripts.flush import flush
 
     (tmp_memex / "notes" / "projects" / "memex").mkdir(parents=True, exist_ok=True)
 
@@ -141,7 +129,7 @@ def test_flush_passes_target_project(tmp_memex: Path, tmp_path: Path):
         "target_project": "memex",
     }])
 
-    with patch("scripts.flush.LLMClient") as MockClient:
+    with patch("memex.scripts.flush.LLMClient") as MockClient:
         MockClient.from_config.return_value.complete.return_value = mock_response
         flush(raw_file=raw_file, project_id="", memex_dir=tmp_memex)
 
@@ -152,9 +140,7 @@ def test_flush_passes_target_project(tmp_memex: Path, tmp_path: Path):
 
 def test_flush_clears_status_override_on_new_notes(tmp_memex: Path, tmp_path: Path):
     """When flush writes new items, any status override is cleared."""
-    import sys
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from scripts.flush import flush
+    from memex.scripts.flush import flush
     from memex.state import ProjectState
 
     state = ProjectState(state_dir=tmp_memex / "state", project_id="test-project")
@@ -170,7 +156,7 @@ def test_flush_clears_status_override_on_new_notes(tmp_memex: Path, tmp_path: Pa
         "content": "Switched from INI to YAML for config.",
     }])
 
-    with patch("scripts.flush.LLMClient") as MockClient:
+    with patch("memex.scripts.flush.LLMClient") as MockClient:
         MockClient.from_config.return_value.complete.return_value = mock_response
         flush(raw_file=raw_file, project_id="test-project", memex_dir=tmp_memex)
 

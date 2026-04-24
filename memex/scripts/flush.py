@@ -75,10 +75,18 @@ Transcript:
 
 
 def _extract_json(text: str) -> str:
-    """Strip markdown fences and extract the outermost {...} block."""
+    """Strip markdown fences, extract the outermost {...} block, and repair common LLM JSON errors."""
+    # Strip markdown code fences
     text = re.sub(r"```(?:json)?\s*", "", text).strip()
     start, end = text.find("{"), text.rfind("}")
-    return text[start:end + 1] if start != -1 else text
+    if start == -1:
+        return text
+    text = text[start:end + 1]
+    # Fix trailing commas before } or ]
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+    # Fix missing commas between objects in arrays: "}\n  {" → "},\n  {"
+    text = re.sub(r"}\s*\n(\s*\{)", r"},\n\1", text)
+    return text
 
 
 def _known_project_ids(notes_dir: Path) -> list[str]:
@@ -119,7 +127,7 @@ def flush(
     client = LLMClient.from_config(config, stage="flush")
 
     try:
-        response = client.complete(prompt=prompt, max_tokens=2048)
+        response = client.complete(prompt=prompt, max_tokens=4096)
         data = json.loads(_extract_json(response.text))
     except (json.JSONDecodeError, Exception) as e:
         logging.error("LLM response parse error: %s", e)
