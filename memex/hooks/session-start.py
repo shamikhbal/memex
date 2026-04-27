@@ -58,10 +58,13 @@ def _compile_needed(state: ProjectState) -> bool:
 
 
 def main() -> None:
-    try:
-        hook_input = json.loads(sys.stdin.read())
-    except (json.JSONDecodeError, ValueError):
+    if _IS_FACTORY:
         hook_input = {}
+    else:
+        try:
+            hook_input = json.loads(sys.stdin.read())
+        except (json.JSONDecodeError, ValueError):
+            hook_input = {}
 
     # Factory passes cwd via FACTORY_PROJECT_DIR; Claude Code via stdin
     if _IS_FACTORY:

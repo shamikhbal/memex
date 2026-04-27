@@ -40,11 +40,14 @@ logging.basicConfig(
 
 
 def main() -> None:
-    try:
-        hook_input = json.loads(sys.stdin.read())
-    except (json.JSONDecodeError, ValueError) as e:
-        logging.error("invalid hook input: %s", e)
-        sys.exit(0)
+    if _IS_FACTORY:
+        hook_input = {}
+    else:
+        try:
+            hook_input = json.loads(sys.stdin.read())
+        except (json.JSONDecodeError, ValueError) as e:
+            logging.error("invalid hook input: %s", e)
+            sys.exit(0)
 
     transcript_path_str: str = hook_input.get("transcript_path", "")
     cwd_str: str = hook_input.get("cwd", ".")
