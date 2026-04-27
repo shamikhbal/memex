@@ -4,6 +4,24 @@ import json
 from pathlib import Path
 
 
+def truncate_transcript(text: str, max_chars: int) -> str:
+    """
+    Truncate a markdown transcript to max_chars, keeping the most recent
+    portion and aligning to a turn boundary (``**User:**`` or ``**Assistant:**``).
+
+    If the text is already within the limit, it is returned unchanged.
+    """
+    if len(text) <= max_chars:
+        return text
+
+    truncated = text[-max_chars:]
+    boundary = truncated.find("\n**")
+    if boundary > 0:
+        truncated = truncated[boundary + 1:]
+
+    return truncated
+
+
 def _extract_text(content: object) -> str:
     """Extract plain text from a content field (string or list of blocks)."""
     if isinstance(content, str):

@@ -35,6 +35,7 @@ logging.basicConfig(
 from memex.config import Config
 from memex.llm_client import LLMClient
 from memex.note_writer import append_item
+from memex.pre_filter import truncate_transcript
 from memex.state import ProjectState
 
 FLUSH_PROMPT = """\
@@ -143,6 +144,9 @@ def flush(
         return
 
     logging.info("flush triggered — project=%s raw=%s chars=%d", project_id, raw_file.name, len(content))
+
+    # Safety net: truncate if session-end hook didn't (e.g. legacy raw files)
+    content = truncate_transcript(content, config.max_flush_chars)
 
     known = _known_project_ids(config.notes_dir)
     prompt = FLUSH_PROMPT.replace("{transcript}", content).replace(

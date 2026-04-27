@@ -24,7 +24,7 @@ if not (ROOT / "__init__.py").exists():
     sys.path.insert(0, str(ROOT))
 
 from memex.config import Config
-from memex.pre_filter import pre_filter
+from memex.pre_filter import pre_filter, truncate_transcript
 from memex.project_id import get_project_id
 
 MEMEX_DIR = Path(os.environ.get("MEMEX_DIR", Path.home() / ".memex"))
@@ -77,7 +77,7 @@ def main() -> None:
     transcript = _read_transcript(hook_input)
 
     if transcript:
-        content = transcript
+        content = truncate_transcript(transcript, config.max_flush_chars)
         turn_count = content.count("\n") // 2  # rough estimate
     elif transcript_path_str:
         transcript_path = Path(transcript_path_str)
