@@ -409,8 +409,8 @@ def install(memex_dir: Optional[str], platform: Optional[str]) -> None:
 @click.option(
     "--platform",
     default=None,
-    type=click.Choice(["claude", "factory"], case_sensitive=False),
-    help="Target AI platform (default: auto-detect or 'claude')",
+    type=click.Choice(["claude", "factory", "all"], case_sensitive=False),
+    help="Target AI platform. If omitted, prompts interactively.",
 )
 @click.option(
     "--delete-data",
@@ -428,27 +428,43 @@ def uninstall(memex_dir: Optional[str], platform: Optional[str], delete_data: bo
         "SessionStart": f"{sys.executable} {hooks_dir / 'session-start.py'}",
     }
 
-    if platform == "factory":
-        settings_path = Path.home() / ".factory" / "settings.json"
-    else:
-        settings_path = Path.home() / ".claude" / "settings.json"
+    if platform is None:
+        if sys.stdin.isatty():
+            platform = _interactive_platform_select()
+        else:
+            platform = "claude"
 
-    hooks_changed = remove_hooks(settings_path, hook_commands)
-    platform_label = "factory (Droid)" if platform == "factory" else "claude"
-    if hooks_changed:
-        click.echo(f"  ✓  removed hooks from {settings_path} ({platform_label})")
-    else:
-        click.echo(f"  –  no memex hooks found in {settings_path} ({platform_label})")
+    platforms: list[str] = ["claude", "factory"] if platform == "all" else [platform]
+
+    for p in platforms:
+        if p == "factory":
+            settings_path = Path.home() / ".factory" / "settings.json"
+            platform_label = "factory (Droid)"
+        else:
+            settings_path = Path.home() / ".claude" / "settings.json"
+            platform_label = "claude"
+
+        hooks_changed = remove_hooks(settings_path, hook_commands)
+        if hooks_changed:
+            click.echo(f"  \u2713  removed hooks from {settings_path} ({platform_label})")
+        else:
+            click.echo(f"  \u2013  no memex hooks found in {settings_path} ({platform_label})")
+
+        if p == "factory":
+            skill_dst = Path.home() / ".factory" / "skills" / "memex"
+            if skill_dst.exists():
+                shutil.rmtree(skill_dst)
+                click.echo(f"  \u2713  removed memex skill from {skill_dst}")
 
     if delete_data:
         resolved_memex = Path(memex_dir) if memex_dir else Path.home() / ".memex"
         if resolved_memex.exists():
             shutil.rmtree(resolved_memex)
-            click.echo(f"  ✓  deleted {resolved_memex}")
+            click.echo(f"  \u2713  deleted {resolved_memex}")
         else:
-            click.echo(f"  –  {resolved_memex} not found, skipped")
+            click.echo(f"  \u2013  {resolved_memex} not found, skipped")
     else:
         resolved_memex = Path(memex_dir) if memex_dir else Path.home() / ".memex"
-        click.echo(f"  –  kept {resolved_memex} (pass --delete-data to remove)")
+        click.echo(f"  \u2013  kept {resolved_memex} (pass --delete-data to remove)")
 
     click.echo("\nmemex uninstalled. Restart your AI platform for changes to take effect.")
