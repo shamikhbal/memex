@@ -1,6 +1,8 @@
+"""Installer: creates ~/.memex/ and registers hooks with supported platforms (Claude Code, Factory Droid)."""
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import yaml
@@ -34,6 +36,18 @@ _DEFAULT_CONFIG = {
         "compile_after_hour": 18,
     },
 }
+
+# Platform settings paths and hook event mappings
+_CLAUDE_SETTINGS = Path.home() / ".claude" / "settings.json"
+_FACTORY_SETTINGS = Path.home() / ".factory" / "settings.json"
+
+
+def _factory_hook_entry(command: str) -> dict:
+    """Build a Factory Droid hook entry (matcher + hooks list)."""
+    return {
+        "matcher": "",
+        "hooks": [{"type": "command", "command": command}],
+    }
 
 
 def create_memex_dir(memex_dir: Path) -> list[str]:
@@ -95,9 +109,12 @@ def _purge_stale_memex_entries(
     return filtered, len(filtered) != len(event_list)
 
 
-def merge_hooks(settings_path: Path, hook_commands: dict[str, str]) -> bool:
+def merge_hooks(
+    settings_path: Path,
+    hook_commands: dict[str, str],
+) -> bool:
     """
-    Add memex hook entries to settings.json without removing existing hooks.
+    Add memex hook entries to a platform settings file without removing existing hooks.
 
     Stale memex entries (same hook script filename, different path/interpreter)
     are removed before adding fresh entries to prevent accumulation on reinstall.
@@ -105,7 +122,7 @@ def merge_hooks(settings_path: Path, hook_commands: dict[str, str]) -> bool:
     hook_commands: {"EventName": "/absolute/path/to/hook.py", ...}
 
     Returns True if any changes were made, False if all already registered.
-    Creates settings.json if it doesn't exist.
+    Creates settings file if it doesn't exist.
     """
     if settings_path.exists():
         try:
@@ -114,6 +131,7 @@ def merge_hooks(settings_path: Path, hook_commands: dict[str, str]) -> bool:
             data = {}
     else:
         data = {}
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
 
     hooks: dict = data.setdefault("hooks", {})
     changed = False
@@ -134,10 +152,7 @@ def merge_hooks(settings_path: Path, hook_commands: dict[str, str]) -> bool:
             changed = True
 
         if not _command_registered(event_list, command):
-            event_list.append({
-                "matcher": "",
-                "hooks": [{"type": "command", "command": command}],
-            })
+            event_list.append(_factory_hook_entry(command))
             changed = True
 
     if changed:

@@ -188,3 +188,131 @@ def test_target_project_routes_insight_to_matched_project(tmp_memex: Path):
     dest = notes / "projects" / "memex" / "path-resolution.md"
     assert dest.exists()
     assert "resolve()" in dest.read_text()
+
+
+# ── REMINDER ─────────────────────────────────────────────────────────────────
+
+
+def test_reminder_with_project_routes_to_project_reminders(tmp_memex: Path):
+    notes = tmp_memex / "notes"
+    append_item(
+        tag="REMINDER",
+        content="Check production deployment after Friday release.",
+        concept="deploy-verification",
+        project_id="my-project",
+        notes_dir=notes,
+        today=date(2026, 4, 22),
+        deadline="2026-04-25",
+    )
+    dest = notes / "projects" / "my-project" / "reminders.md"
+    assert dest.exists()
+    text = dest.read_text()
+    assert "type/reminder-log" in text
+    assert "Check production deployment" in text
+    assert "[deadline:: 2026-04-25]" in text
+
+
+def test_reminder_without_project_routes_to_global_reminders(tmp_memex: Path):
+    notes = tmp_memex / "notes"
+    append_item(
+        tag="REMINDER",
+        content="Renew SSL certificate before it expires.",
+        concept="ssl-renewal",
+        project_id=None,
+        notes_dir=notes,
+        today=date(2026, 4, 22),
+        deadline="2026-05-01",
+    )
+    dest = notes / "reminders.md"
+    assert dest.exists()
+    text = dest.read_text()
+    assert "type/reminder-log" in text
+    assert "Renew SSL certificate" in text
+
+
+def test_reminder_without_deadline_still_writes(tmp_memex: Path):
+    notes = tmp_memex / "notes"
+    append_item(
+        tag="REMINDER",
+        content="Research WebSocket alternatives for chat.",
+        concept="websocket-research",
+        project_id="my-project",
+        notes_dir=notes,
+        today=date(2026, 4, 22),
+    )
+    dest = notes / "projects" / "my-project" / "reminders.md"
+    assert dest.exists()
+    text = dest.read_text()
+    assert "WebSocket" in text
+
+
+def test_reminder_target_project_routes_correctly(tmp_memex: Path):
+    notes = tmp_memex / "notes"
+    (notes / "projects" / "other-proj").mkdir(parents=True, exist_ok=True)
+    append_item(
+        tag="REMINDER",
+        content="Review PR #42 in other-proj.",
+        concept="review-pr",
+        project_id=None,
+        notes_dir=notes,
+        today=date(2026, 4, 22),
+        target_project="other-proj",
+    )
+    dest = notes / "projects" / "other-proj" / "reminders.md"
+    assert dest.exists()
+    assert "PR #42" in dest.read_text()
+
+
+# ── POST_MORTEM ──────────────────────────────────────────────────────────────
+
+
+def test_post_mortem_with_project_routes_to_project_postmortems(tmp_memex: Path):
+    notes = tmp_memex / "notes"
+    append_item(
+        tag="POST_MORTEM",
+        content="Deploy to staging crashed due to missing env var DB_URL. Added to CI config as prevention.",
+        concept="deploy-crash",
+        project_id="my-project",
+        notes_dir=notes,
+        today=date(2026, 4, 22),
+        severity="moderate",
+    )
+    dest = notes / "projects" / "my-project" / "post-mortems.md"
+    assert dest.exists()
+    text = dest.read_text()
+    assert "type/postmortem-log" in text
+    assert "DB_URL" in text
+    assert "**Severity**: moderate" in text
+
+
+def test_post_mortem_without_project_routes_to_daily(tmp_memex: Path):
+    notes = tmp_memex / "notes"
+    append_item(
+        tag="POST_MORTEM",
+        content="General failure about something not project-related.",
+        concept="general-failure",
+        project_id=None,
+        notes_dir=notes,
+        today=date(2026, 4, 22),
+        severity="minor",
+    )
+    dest = notes / "daily" / "2026-04-22.md"
+    assert dest.exists()
+    text = dest.read_text()
+    assert "General failure" in text
+
+
+def test_post_mortem_without_severity_still_writes(tmp_memex: Path):
+    notes = tmp_memex / "notes"
+    append_item(
+        tag="POST_MORTEM",
+        content="Wasted 2 hours on wrong approach.",
+        concept="dead-end",
+        project_id="my-project",
+        notes_dir=notes,
+        today=date(2026, 4, 22),
+    )
+    dest = notes / "projects" / "my-project" / "post-mortems.md"
+    assert dest.exists()
+    text = dest.read_text()
+    assert "Wasted 2 hours" in text

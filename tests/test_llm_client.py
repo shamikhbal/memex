@@ -45,3 +45,50 @@ def test_unknown_provider_raises():
     client = LLMClient(provider="unknown", model="x", base_url=None)
     with pytest.raises(ValueError, match="Unknown provider"):
         client.complete(prompt="hi", max_tokens=10)
+
+
+def test_ollama_client_requests_json_mode():
+    """ollama provider passes response_format=json_object to the API."""
+    client = LLMClient(provider="ollama", model="gemma4:26b", base_url="http://192.168.0.127:11434/v1")
+    mock_choice = MagicMock()
+    mock_choice.message.content = '{"items": []}'
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    with patch("memex.llm_client.openai") as mock_openai:
+        mock_openai.OpenAI.return_value.chat.completions.create.return_value = mock_response
+        client.complete(prompt="extract this", max_tokens=512)
+
+    call_kwargs = mock_openai.OpenAI.return_value.chat.completions.create.call_args.kwargs
+    assert call_kwargs["response_format"] == {"type": "json_object"}
+
+
+def test_openai_client_requests_json_mode():
+    """openai provider also passes response_format=json_object."""
+    client = LLMClient(provider="openai", model="gpt-4o-mini", base_url=None)
+    mock_choice = MagicMock()
+    mock_choice.message.content = '{"items": []}'
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    with patch("memex.llm_client.openai") as mock_openai:
+        mock_openai.OpenAI.return_value.chat.completions.create.return_value = mock_response
+        client.complete(prompt="extract this", max_tokens=512)
+
+    call_kwargs = mock_openai.OpenAI.return_value.chat.completions.create.call_args.kwargs
+    assert call_kwargs["response_format"] == {"type": "json_object"}
+
+
+def test_ollama_none_content_returns_empty_string():
+    """When ollama returns None content (e.g. token limit hit), LLMResponse.text is empty string."""
+    client = LLMClient(provider="ollama", model="test-model", base_url="http://localhost:11434/v1")
+    mock_choice = MagicMock()
+    mock_choice.message.content = None
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    with patch("memex.llm_client.openai") as mock_openai:
+        mock_openai.OpenAI.return_value.chat.completions.create.return_value = mock_response
+        result = client.complete(prompt="test", max_tokens=100)
+
+    assert result.text == ""

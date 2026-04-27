@@ -12,6 +12,7 @@ os.environ["CLAUDE_INVOKED_BY"] = "memory_flush"
 
 import json
 import logging
+import re
 import subprocess
 import sys
 import time
@@ -44,18 +45,40 @@ For each item, assign one tag:
 - INSIGHT: something learned that would be useful next time (how-to, debugging lesson, pattern)
 - PATTERN: a reusable cross-project pattern or technique
 - EXPLORE: brainstorm, ideation, or exploration — not a concrete decision or lesson, but worth capturing
-- SKIP: routine conversation, small talk, nothing worth keeping
+- SUMMARY: casual or routine conversation — not technical knowledge, but a brief diary-style record of what was discussed
+- REMINDER: a follow-up task, pending action, or deferred decision that needs attention in a future session. Include a deadline field (YYYY-MM-DD format) if a date was mentioned, otherwise omit it.
+- POST_MORTEM: a failure, mistake, or dead-end that cost time. Include severity ("minor", "moderate", or "major") and the lesson learned plus prevention action.
 
 For each item also provide:
 - related: other concept names this item connects to. Use short, lowercase, hyphenated names (e.g. "hook-installer", "ollama-config"). Only list genuinely related concepts.
 - tags: 1-3 Obsidian-style tags describing the technology or domain (e.g. "tech/python", "domain/cli", "tech/git"). Do not include type/* or project/* tags — those are added automatically.
 - target_project: (optional) only set this if the item clearly belongs to one of the known projects listed below. Use the exact project name. Omit if no match.
+- deadline: (REMINDER only) YYYY-MM-DD date string if a specific deadline was mentioned. Omit if no deadline given.
+- severity: (POST_MORTEM only) one of "minor", "moderate", or "major".
 
 Known projects: {known_projects}
 
 Return ONLY valid JSON in this format:
 {{
   "items": [
+    {{
+      "tag": "REMINDER",
+      "concept": "short concept name (3-5 words)",
+      "content": "what needs to be done or followed up on",
+      "related": ["other-concept"],
+      "tags": ["domain/security"],
+      "target_project": "project-name",
+      "deadline": "2026-05-15"
+    }},
+    {{
+      "tag": "POST_MORTEM",
+      "concept": "what went wrong",
+      "content": "what happened, why it failed, the lesson, and how to prevent it",
+      "related": ["affected-system"],
+      "tags": ["tech/deployment"],
+      "target_project": "project-name",
+      "severity": "moderate"
+    }},
     {{
       "tag": "DECISION",
       "concept": "short concept name (3-5 words)",
@@ -67,10 +90,27 @@ Return ONLY valid JSON in this format:
   ]
 }}
 
-If nothing is worth keeping, return: {{"items": []}}
+If the session was casual, still produce at least one SUMMARY item with a brief note of what was discussed. Only return {{"items": []}} if the transcript is empty or unreadable.
 
 Transcript:
 {transcript}"""
+
+
+def _extract_json(text: str) -> str:
+    """Strip markdown fences, extract the outermost {...} block, and repair common LLM JSON errors."""
+    if not text:
+        return ""
+    # Strip markdown code fences
+    text = re.sub(r"```(?:json)?\s*", "", text).strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1:
+        return text
+    text = text[start:end + 1]
+    # Fix trailing commas before } or ]
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+    # Fix missing commas between objects in arrays: "}\n  {" → "},\n  {"
+    text = re.sub(r"}\s*\n(\s*\{)", r"},\n\1", text)
+    return text
 
 
 def _known_project_ids(notes_dir: Path) -> list[str]:
@@ -111,10 +151,24 @@ def flush(
     client = LLMClient.from_config(config, stage="flush")
 
     try:
-        response = client.complete(prompt=prompt, max_tokens=2048)
-        data = json.loads(response.text)
-    except (json.JSONDecodeError, Exception) as e:
-        logging.error("LLM response parse error: %s", e)
+        response = client.complete(prompt=prompt, max_tokens=4096)
+    except Exception as e:
+        logging.error("LLM request failed: %s", e)
+        return
+
+    raw_text = response.text
+    if not raw_text or not raw_text.strip():
+        logging.error("LLM returned empty response (project=%s raw=%s)", project_id, raw_file.name)
+        return
+
+    extracted = _extract_json(raw_text)
+    try:
+        data = json.loads(extracted)
+    except json.JSONDecodeError as e:
+        logging.error(
+            "LLM response parse error for project=%s raw=%s: %s — first 500 chars: %s",
+            project_id, raw_file.name, e, raw_text[:500],
+        )
         return
 
     items = data.get("items", [])
@@ -135,6 +189,8 @@ def flush(
             related=item.get("related", []),
             extra_tags=item.get("tags", []),
             target_project=item.get("target_project"),
+            deadline=item.get("deadline"),
+            severity=item.get("severity"),
         )
 
     written = [i for i in items if i.get("tag", "SKIP") != "SKIP" and i.get("content")]

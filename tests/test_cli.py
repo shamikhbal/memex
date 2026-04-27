@@ -231,3 +231,42 @@ def test_status_auto_clears_override(tmp_memex: Path):
 
     state = ProjectState(state_dir=tmp_memex / "state", project_id="memex")
     assert state.status_override is None
+
+
+# ── recall / search ──────────────────────────────────────────────────────────
+
+
+def test_recall_finds_matches(tmp_memex: Path, tmp_path: Path):
+    from memex.cli import main
+    runner = CliRunner()
+
+    (tmp_memex / "notes").mkdir(parents=True, exist_ok=True)
+    (tmp_memex / "notes" / "ideas.md").write_text("# Ideas\n\nUse PostgreSQL for the database.\n")
+
+    result = runner.invoke(main, ["recall", "--memex-dir", str(tmp_memex), "PostgreSQL"])
+    assert result.exit_code == 0
+    assert "PostgreSQL" in result.output
+    assert "ideas.md" in result.output
+
+
+def test_recall_no_matches(tmp_memex: Path):
+    from memex.cli import main
+    runner = CliRunner()
+
+    (tmp_memex / "notes").mkdir(parents=True, exist_ok=True)
+
+    result = runner.invoke(main, ["recall", "--memex-dir", str(tmp_memex), "nonexistent"])
+    assert result.exit_code == 0
+    assert "No matches" in result.output
+
+
+def test_search_is_alias_for_recall(tmp_memex: Path):
+    from memex.cli import main
+    runner = CliRunner()
+
+    (tmp_memex / "notes").mkdir(parents=True, exist_ok=True)
+    (tmp_memex / "notes" / "test.md").write_text("# Test\n\nHello world.\n")
+
+    result = runner.invoke(main, ["search", "--memex-dir", str(tmp_memex), "Hello"])
+    assert result.exit_code == 0
+    assert "Hello" in result.output

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-SessionEnd hook — captures Claude Code transcript → raw file → spawns flush.py.
+SessionEnd hook — captures AI session transcript → raw file → spawns flush.py.
+
+Supports both Claude Code and Factory Droid platforms.
 No API calls. Must complete in <10 seconds.
 """
 from __future__ import annotations
@@ -28,12 +30,28 @@ from memex.project_id import get_project_id
 MEMEX_DIR = Path(os.environ.get("MEMEX_DIR", Path.home() / ".memex"))
 config = Config(memex_dir=MEMEX_DIR)
 
+_IS_FACTORY = bool(os.environ.get("FACTORY_PROJECT_DIR"))
+
 logging.basicConfig(
     filename=str(MEMEX_DIR / "flush.log"),
     level=logging.INFO,
     format="%(asctime)s %(levelname)s [session-end] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+
+def _read_transcript(hook_input: dict) -> str | None:
+    """Read transcript content from either Claude Code or Factory Droid payload."""
+    # Factory Droid may provide transcript directly
+    transcript = hook_input.get("transcript", "") or hook_input.get("transcript_path", "")
+    if transcript:
+        if "\n" in transcript and len(transcript) > 200:
+            return transcript.lstrip("\ufeff")
+        # It's a file path
+        tp = Path(transcript)
+        if tp.exists():
+            return tp.read_text(encoding="utf-8")
+    return None
 
 
 def main() -> None:
@@ -47,18 +65,27 @@ def main() -> None:
     transcript_path_str: str = hook_input.get("transcript_path", "")
     cwd_str: str = hook_input.get("cwd", ".")
 
-    if not transcript_path_str:
+    if _IS_FACTORY:
+        cwd = Path(os.environ["FACTORY_PROJECT_DIR"])
+    else:
+        cwd = Path(cwd_str)
+
+    # Try reading transcript — Factory may provide it differently
+    transcript = _read_transcript(hook_input)
+
+    if transcript:
+        content = transcript
+        turn_count = content.count("\n") // 2  # rough estimate
+    elif transcript_path_str:
+        transcript_path = Path(transcript_path_str)
+        content, turn_count = pre_filter(
+            transcript_path,
+            max_context_chars=config.max_context_chars,
+            max_turns=config.max_turns,
+        )
+    else:
         logging.info("no transcript_path, skipping")
         sys.exit(0)
-
-    transcript_path = Path(transcript_path_str)
-    cwd = Path(cwd_str)
-
-    content, turn_count = pre_filter(
-        transcript_path,
-        max_context_chars=config.max_context_chars,
-        max_turns=config.max_turns,
-    )
 
     if not content:
         logging.info("pre-filter produced empty output, skipping")

@@ -206,3 +206,65 @@ def test_build_context_dormant_includes_index_capped(tmp_memex: Path):
     context = build_context(config, "test-proj")
     assert len(context) < _tier_budget(config.max_inject_chars, "index")
     assert "Very old decision" not in context
+
+
+# ── reminders injection ──────────────────────────────────────────────────────
+
+
+def test_build_context_includes_global_reminders(tmp_memex: Path):
+    notes = make_notes(tmp_memex)
+    (notes / "reminders.md").write_text("# Global Reminders\n\n## Open\n\n- Renew SSL cert")
+    cfg = Config(memex_dir=tmp_memex)
+    result = build_context(cfg, "test-proj")
+    assert "Reminders" in result
+    assert "Renew SSL" in result
+
+
+def test_build_context_includes_project_reminders(tmp_memex: Path):
+    notes = make_notes(tmp_memex)
+    proj_reminders = notes / "projects" / "test-proj" / "reminders.md"
+    proj_reminders.parent.mkdir(parents=True, exist_ok=True)
+    proj_reminders.write_text("# Reminders — test-proj\n\n## Open\n\n- Deploy audit")
+    cfg = Config(memex_dir=tmp_memex)
+    result = build_context(cfg, "test-proj")
+    assert "Reminders" in result
+    assert "Deploy audit" in result
+
+
+# ── post-mortems injection ───────────────────────────────────────────────────
+
+
+def test_build_context_includes_post_mortem_for_active(tmp_memex: Path):
+    notes = make_notes(tmp_memex)
+    proj = notes / "projects" / "test-proj"
+    today = date.today().isoformat()
+    (proj / "_index.md").write_text("active project\n")
+    (proj / "decisions.md").write_text(f"## {today}\n\nRecent decision to mark as active.\n")
+    (proj / "post-mortems.md").write_text("# Post-Mortems — test-proj\n\nDB_URL crash")
+    cfg = Config(memex_dir=tmp_memex)
+    result = build_context(cfg, "test-proj")
+    assert "Post-Mortems" in result
+    assert "DB_URL" in result
+
+
+def test_build_context_skips_post_mortem_for_paused(tmp_memex: Path):
+    notes = make_notes(tmp_memex)
+    proj = notes / "projects" / "test-proj"
+    old_date = (date.today() - timedelta(days=15)).isoformat()
+    (proj / "_index.md").write_text(f"## {old_date}\n\nold index\n")
+    (proj / "post-mortems.md").write_text("DB_URL crash")
+    cfg = Config(memex_dir=tmp_memex)
+    result = build_context(cfg, "test-proj")
+    assert "Post-Mortems" not in result
+    assert "DB_URL" not in result
+
+
+# ── budget fractions ─────────────────────────────────────────────────────────
+
+
+def test_tier_budget_reminders_is_05_percent():
+    assert _tier_budget(20000, "reminders") == 1000
+
+
+def test_tier_budget_postmortems_is_05_percent():
+    assert _tier_budget(20000, "postmortems") == 1000

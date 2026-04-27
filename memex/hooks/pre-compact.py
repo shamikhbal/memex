@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-PreCompact hook — safety net before Claude Code auto-compacts context.
-Same architecture as session-end.py. Guards against empty transcript_path (CC bug #13668).
+PreCompact hook — safety net before AI platform auto-compacts context.
+Same architecture as session-end.py. Guards against empty transcript_path (known CC bug #13668).
+
+Supports both Claude Code and Factory Droid platforms.
 """
 from __future__ import annotations
 
@@ -27,6 +29,8 @@ from memex.project_id import get_project_id
 MEMEX_DIR = Path(os.environ.get("MEMEX_DIR", Path.home() / ".memex"))
 config = Config(memex_dir=MEMEX_DIR)
 
+_IS_FACTORY = bool(os.environ.get("FACTORY_PROJECT_DIR"))
+
 logging.basicConfig(
     filename=str(MEMEX_DIR / "flush.log"),
     level=logging.INFO,
@@ -45,13 +49,17 @@ def main() -> None:
     transcript_path_str: str = hook_input.get("transcript_path", "")
     cwd_str: str = hook_input.get("cwd", ".")
 
+    if _IS_FACTORY:
+        cwd = Path(os.environ["FACTORY_PROJECT_DIR"])
+    else:
+        cwd = Path(cwd_str)
+
     # Known CC bug: transcript_path can be empty on PreCompact
     if not transcript_path_str:
         logging.info("empty transcript_path (known CC bug), skipping")
         sys.exit(0)
 
     transcript_path = Path(transcript_path_str)
-    cwd = Path(cwd_str)
 
     content, turn_count = pre_filter(
         transcript_path,
@@ -64,7 +72,7 @@ def main() -> None:
         sys.exit(0)
 
     project_id = get_project_id(cwd)
-    raw_dir = config.raw_dir / project_id
+    raw_dir = config.raw_dir / (project_id or "_daily")
     raw_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -75,7 +83,7 @@ def main() -> None:
 
     flush_script = ROOT / "scripts" / "flush.py"
     subprocess.Popen(
-        [sys.executable, str(flush_script), str(raw_file), project_id],
+        [sys.executable, str(flush_script), str(raw_file), project_id or ""],
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

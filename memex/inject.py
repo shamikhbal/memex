@@ -14,7 +14,9 @@ _FRACTIONS = {
     "index": 0.35,
     "decisions": 0.15,
     "daily": 0.20,
-    # concepts gets whatever is left after project + daily
+    "reminders": 0.05,
+    "postmortems": 0.05,
+    # concepts gets whatever is left after project + daily + reminders
 }
 
 
@@ -141,6 +143,29 @@ def build_context(
     daily_content, _ = _read_capped_lines(daily_path, _tier_budget(total, "daily"))
     if daily_content:
         sections.append(f"## {daily_path.name}\n\n{daily_content}")
+
+    # Reminders tier — only the "Open" section, always included
+    reminders_path = notes / "reminders.md"
+    if reminders_path.exists():
+        reminders_content, _ = _read_capped_lines(reminders_path, _tier_budget(total, "reminders"))
+        if reminders_content:
+            sections.append(f"## reminders.md\n\n{reminders_content}")
+
+    # Project-level reminders
+    if project_id:
+        proj_reminders_path = notes / "projects" / project_id / "reminders.md"
+        if proj_reminders_path.exists():
+            proj_reminders_content, _ = _read_capped_lines(proj_reminders_path, _tier_budget(total, "reminders"))
+            if proj_reminders_content:
+                sections.append(f"## {project_id}/reminders.md\n\n{proj_reminders_content}")
+
+    # Post-mortems tier — recent failures only when active
+    if project_id and status == "active":
+        pm_path = notes / "projects" / project_id / "post-mortems.md"
+        if pm_path.exists():
+            pm_content, _ = _read_capped_lines(pm_path, _tier_budget(total, "postmortems"))
+            if pm_content:
+                sections.append(f"## {project_id}/post-mortems.md\n\n{pm_content}")
 
     # Concepts tier — whatever budget remains
     used_so_far = sum(len(s) for s in sections)
