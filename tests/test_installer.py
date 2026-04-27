@@ -129,3 +129,14 @@ def test_merge_hooks_preserves_existing_hooks(tmp_path: Path):
     data = json.loads(settings.read_text())
     assert "PreToolUse" in data["hooks"]
     assert "SessionEnd" in data["hooks"]
+
+
+def test_merge_hooks_creates_parent_dir_for_factory_settings(tmp_path: Path):
+    """When ~/.factory/settings.json doesn't exist, parent is created automatically."""
+    factory_dir = tmp_path / ".factory"
+    settings = factory_dir / "settings.json"
+    # Neither directory nor file exists
+    assert not factory_dir.exists()
+    merge_hooks(settings, {"SessionEnd": "/hooks/session-end.py"})
+    assert settings.exists()
+    assert factory_dir.is_dir()

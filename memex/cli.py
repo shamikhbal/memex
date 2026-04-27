@@ -124,17 +124,52 @@ def inject(memex_dir: Optional[str], cwd: str) -> None:
 
 @main.command()
 @click.option("--memex-dir", envvar="MEMEX_DIR", default=None, type=click.Path())
+@click.option("--project", "-p", default=None, help="Limit search to a specific project")
+@click.option("--max", "-n", default=20, type=int, help="Maximum results (default: 20)")
 @click.argument("question", nargs=-1, required=True)
-def query(memex_dir: Optional[str], question: tuple[str, ...]) -> None:
-    """Query the knowledge graph. Usage: memex query what decisions were made?"""
+def recall(memex_dir: Optional[str], project: Optional[str], max: int, question: tuple[str, ...]) -> None:
+    """Search vault notes for keyword matches. Usage: memex recall "deployment strategy" """
+    from memex.search import search
+
     config = Config(memex_dir=Path(memex_dir) if memex_dir else Path.home() / ".memex")
-    graph_json = config.graph_dir / "graph.json"
+    query_text = " ".join(question)
+    result = search(config.notes_dir, query_text, project_id=project, max_results=max)
 
-    if not graph_json.exists():
-        click.echo(f"  ✗  graph.json not found at {graph_json}. Run 'memex compile' first.", err=True)
-        sys.exit(1)
+    if not result.hits:
+        click.echo(f"  No matches found for '{query_text}'.")
+        return
 
-    subprocess.run(["graphify", "query", " ".join(question), "--graph", str(graph_json)])
+    click.echo(f"  Found {result.file_count} file(s) — {len(result.hits)} hits:")
+    for hit in result.hits:
+        heading_display = f" ({hit.heading})" if hit.heading != "(top)" else ""
+        click.echo(f"    {hit.file}:{hit.line_number}{heading_display}")
+        click.echo(f"      {hit.snippet}")
+    click.echo()
+
+
+@main.command()
+@click.option("--memex-dir", envvar="MEMEX_DIR", default=None, type=click.Path())
+@click.option("--project", "-p", default=None, help="Limit search to a specific project")
+@click.argument("question", nargs=-1, required=True)
+def search(memex_dir: Optional[str], project: Optional[str], question: tuple[str, ...]) -> None:
+    """Alias for 'recall'. Search vault notes for keyword matches."""
+    # Delegate to recall handler
+    from memex.search import search as do_search
+
+    config = Config(memex_dir=Path(memex_dir) if memex_dir else Path.home() / ".memex")
+    query_text = " ".join(question)
+    result = do_search(config.notes_dir, query_text, project_id=project)
+
+    if not result.hits:
+        click.echo(f"  No matches found for '{query_text}'.")
+        return
+
+    click.echo(f"  Found {result.file_count} file(s) — {len(result.hits)} hits:")
+    for hit in result.hits:
+        heading_display = f" ({hit.heading})" if hit.heading != "(top)" else ""
+        click.echo(f"    {hit.file}:{hit.line_number}{heading_display}")
+        click.echo(f"      {hit.snippet}")
+    click.echo()
 
 
 @main.command()
@@ -186,6 +221,61 @@ def compile(memex_dir: Optional[str], project_id: Optional[str]) -> None:
 
 
 _VALID_STATUSES = {"active", "paused", "dormant", "completed"}
+
+
+def _interactive_platform_select() -> str:
+    """Prompt user to choose which AI platform(s) to install hooks for."""
+    click.echo()
+    click.echo("  memex — personal memory system")
+    click.echo("  Install hooks for your AI coding agent:")
+    click.echo()
+
+    # Detect existing installations
+    cc_exists = (Path.home() / ".claude" / "settings.json").exists()
+    cc_has_memex = False
+    if cc_exists:
+        try:
+            data = json.loads((Path.home() / ".claude" / "settings.json").read_text())
+            raw = json.dumps(data.get("hooks", {}))
+            cc_has_memex = "session-end" in raw and "session-start" in raw
+        except Exception:
+            pass
+
+    fd_exists = (Path.home() / ".factory" / "settings.json").exists()
+    fd_has_memex = False
+    if fd_exists:
+        try:
+            data = json.loads((Path.home() / ".factory" / "settings.json").read_text())
+            raw = json.dumps(data.get("hooks", {}))
+            fd_has_memex = "session-end" in raw and "session-start" in raw
+        except Exception:
+            pass
+
+    cc_label = "Claude Code"
+    if cc_has_memex:
+        cc_label += " (already installed)"
+    elif cc_exists:
+        cc_label += " (hooks config exists)"
+
+    fd_label = "Factory Droid"
+    if fd_has_memex:
+        fd_label += " (already installed + skill)"
+    elif fd_exists:
+        fd_label += " (hooks config exists)"
+
+    click.echo(f"  1. {cc_label}")
+    click.echo(f"  2. {fd_label}")
+    click.echo("  3. Both")
+    click.echo()
+
+    choice = click.prompt(
+        "  Select platform",
+        type=click.Choice(["1", "2", "3"]),
+        default="1",
+        show_choices=False,
+    )
+    click.echo()
+    return {"1": "claude", "2": "factory", "3": "all"}[choice]
 
 
 @main.command()
@@ -247,8 +337,14 @@ def status(memex_dir: Optional[str], project_id: Optional[str], new_status: Opti
 
 @main.command()
 @click.option("--memex-dir", envvar="MEMEX_DIR", default=None, type=click.Path())
-def install(memex_dir: Optional[str]) -> None:
-    """Create ~/.memex/ structure and register Claude Code hooks."""
+@click.option(
+    "--platform",
+    default=None,
+    type=click.Choice(["claude", "factory", "all"], case_sensitive=False),
+    help="Target AI platform. If omitted, prompts interactively.",
+)
+def install(memex_dir: Optional[str], platform: Optional[str]) -> None:
+    """Create ~/.memex/ structure and register hooks with your AI platform."""
     resolved_memex = Path(memex_dir) if memex_dir else Path.home() / ".memex"
     hooks_dir = Path(__file__).parent / "hooks"
     hook_commands = {
@@ -256,8 +352,17 @@ def install(memex_dir: Optional[str]) -> None:
         "PreCompact": f"{sys.executable} {hooks_dir / 'pre-compact.py'}",
         "SessionStart": f"{sys.executable} {hooks_dir / 'session-start.py'}",
     }
-    settings_path = Path.home() / ".claude" / "settings.json"
 
+    # Interactive platform selection (only when running in a real terminal)
+    if platform is None:
+        if sys.stdin.isatty():
+            platform = _interactive_platform_select()
+        else:
+            platform = "claude"
+
+    platforms: list[str] = ["claude", "factory"] if platform == "all" else [platform]
+
+    # Create directory structure (once)
     created_dirs = create_memex_dir(resolved_memex)
     if created_dirs:
         for d in created_dirs:
@@ -271,39 +376,69 @@ def install(memex_dir: Optional[str]) -> None:
     else:
         click.echo(f"  \u2013  config.yaml already exists, skipped")
 
-    hooks_changed = merge_hooks(settings_path, hook_commands)
-    if hooks_changed:
-        click.echo(f"  \u2713  registered hooks in {settings_path}")
-    else:
-        click.echo(f"  \u2013  hooks already registered in {settings_path}")
+    # Install hooks for each platform
+    for p in platforms:
+        if p == "factory":
+            settings_path = Path.home() / ".factory" / "settings.json"
+            platform_label = "factory (Droid)"
+        else:
+            settings_path = Path.home() / ".claude" / "settings.json"
+            platform_label = "claude"
 
-    click.echo("\nmemex install complete. Start a new Claude Code session to activate.")
+        hooks_changed = merge_hooks(settings_path, hook_commands)
+        if hooks_changed:
+            click.echo(f"  \u2713  registered hooks in {settings_path} ({platform_label})")
+        else:
+            click.echo(f"  \u2013  hooks already registered in {settings_path} ({platform_label})")
+
+        # Copy memex SKILL to Factory skills directory
+        if p == "factory":
+            skill_src = Path(__file__).parent.parent / ".factory" / "skills" / "memex"
+            skill_dst = Path.home() / ".factory" / "skills" / "memex"
+            if skill_src.exists() and not skill_dst.exists():
+                shutil.copytree(skill_src, skill_dst)
+                click.echo(f"  \u2713  installed memex skill to {skill_dst}")
+            elif skill_dst.exists():
+                click.echo(f"  \u2013  memex skill already installed ({skill_dst})")
+
+    click.echo("\nmemex install complete. Start a new session to activate.")
 
 
 @main.command()
 @click.option("--memex-dir", envvar="MEMEX_DIR", default=None, type=click.Path())
+@click.option(
+    "--platform",
+    default=None,
+    type=click.Choice(["claude", "factory"], case_sensitive=False),
+    help="Target AI platform (default: auto-detect or 'claude')",
+)
 @click.option(
     "--delete-data",
     is_flag=True,
     default=False,
     help="Also delete ~/.memex/ (notes, raw transcripts, state). Cannot be undone.",
 )
-@click.confirmation_option(prompt="Remove memex hooks from Claude Code settings?")
-def uninstall(memex_dir: Optional[str], delete_data: bool) -> None:
-    """Remove memex hooks from Claude Code settings (and optionally delete ~/.memex/)."""
+@click.confirmation_option(prompt="Remove memex hooks from your AI platform settings?")
+def uninstall(memex_dir: Optional[str], platform: Optional[str], delete_data: bool) -> None:
+    """Remove memex hooks from platform settings (and optionally delete ~/.memex/)."""
     hooks_dir = Path(__file__).parent / "hooks"
     hook_commands = {
         "SessionEnd": f"{sys.executable} {hooks_dir / 'session-end.py'}",
         "PreCompact": f"{sys.executable} {hooks_dir / 'pre-compact.py'}",
         "SessionStart": f"{sys.executable} {hooks_dir / 'session-start.py'}",
     }
-    settings_path = Path.home() / ".claude" / "settings.json"
+
+    if platform == "factory":
+        settings_path = Path.home() / ".factory" / "settings.json"
+    else:
+        settings_path = Path.home() / ".claude" / "settings.json"
 
     hooks_changed = remove_hooks(settings_path, hook_commands)
+    platform_label = "factory (Droid)" if platform == "factory" else "claude"
     if hooks_changed:
-        click.echo(f"  ✓  removed hooks from {settings_path}")
+        click.echo(f"  ✓  removed hooks from {settings_path} ({platform_label})")
     else:
-        click.echo(f"  –  no memex hooks found in {settings_path}")
+        click.echo(f"  –  no memex hooks found in {settings_path} ({platform_label})")
 
     if delete_data:
         resolved_memex = Path(memex_dir) if memex_dir else Path.home() / ".memex"
@@ -316,4 +451,4 @@ def uninstall(memex_dir: Optional[str], delete_data: bool) -> None:
         resolved_memex = Path(memex_dir) if memex_dir else Path.home() / ".memex"
         click.echo(f"  –  kept {resolved_memex} (pass --delete-data to remove)")
 
-    click.echo("\nmemex uninstalled. Restart Claude Code for changes to take effect.")
+    click.echo("\nmemex uninstalled. Restart your AI platform for changes to take effect.")

@@ -32,7 +32,7 @@ class LLMClient:
         if self.provider in ("openai", "ollama"):
             client = openai.OpenAI(
                 base_url=self.base_url,
-                api_key=os.environ.get("OPENAI_API_KEY", "ollama"),  # env var for real OpenAI, fallback for local endpoints
+                api_key=os.environ.get("OPENAI_API_KEY", "ollama"),
             )
             response = client.chat.completions.create(
                 model=self.model,
@@ -40,7 +40,8 @@ class LLMClient:
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
             )
-            return LLMResponse(text=response.choices[0].message.content)
+            content = response.choices[0].message.content
+            return LLMResponse(text=content or "")
 
         raise ValueError(f"Unknown provider: {self.provider!r}. Use 'anthropic', 'openai', or 'ollama'.")
 

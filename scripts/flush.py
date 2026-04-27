@@ -45,7 +45,7 @@ For each item, assign one tag:
 - INSIGHT: something learned that would be useful next time (how-to, debugging lesson, pattern)
 - PATTERN: a reusable cross-project pattern or technique
 - EXPLORE: brainstorm, ideation, or exploration — not a concrete decision or lesson, but worth capturing
-- SKIP: routine conversation, small talk, nothing worth keeping
+- SUMMARY: casual or routine conversation — not technical knowledge, but a brief diary-style record of what was discussed
 
 For each item also provide:
 - related: other concept names this item connects to. Use short, lowercase, hyphenated names (e.g. "hook-installer", "ollama-config"). Only list genuinely related concepts.
@@ -68,7 +68,7 @@ Return ONLY valid JSON in this format:
   ]
 }}
 
-If nothing is worth keeping, return: {{"items": []}}
+If the session was casual, still produce at least one SUMMARY item with a brief note of what was discussed. Only return {{"items": []}} if the transcript is empty or unreadable.
 
 Transcript:
 {transcript}"""
@@ -76,6 +76,8 @@ Transcript:
 
 def _extract_json(text: str) -> str:
     """Strip markdown fences, extract the outermost {...} block, and repair common LLM JSON errors."""
+    if not text:
+        return ""
     # Strip markdown code fences
     text = re.sub(r"```(?:json)?\s*", "", text).strip()
     start, end = text.find("{"), text.rfind("}")
@@ -128,9 +130,23 @@ def flush(
 
     try:
         response = client.complete(prompt=prompt, max_tokens=4096)
-        data = json.loads(_extract_json(response.text))
-    except (json.JSONDecodeError, Exception) as e:
-        logging.error("LLM response parse error: %s", e)
+    except Exception as e:
+        logging.error("LLM request failed: %s", e)
+        return
+
+    raw_text = response.text
+    if not raw_text or not raw_text.strip():
+        logging.error("LLM returned empty response (project=%s raw=%s)", project_id, raw_file.name)
+        return
+
+    extracted = _extract_json(raw_text)
+    try:
+        data = json.loads(extracted)
+    except json.JSONDecodeError as e:
+        logging.error(
+            "LLM response parse error for project=%s raw=%s: %s — first 500 chars: %s",
+            project_id, raw_file.name, e, raw_text[:500],
+        )
         return
 
     items = data.get("items", [])

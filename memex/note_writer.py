@@ -12,6 +12,9 @@ _TAG_PREFIXES = {
     "EXPLORE": "type/exploration",
     "INSIGHT": "type/insight",
     "PATTERN": "type/pattern",
+    "SUMMARY": "type/summary",
+    "REMINDER": "type/reminder",
+    "POST_MORTEM": "type/post-mortem",
 }
 
 
@@ -104,6 +107,73 @@ def _build_daily_frontmatter(date_stamp: str) -> str:
     return "\n".join(lines)
 
 
+def _build_reminders_frontmatter(project_id: str, created: str) -> str:
+    """Build frontmatter for project-specific reminders."""
+    lines = [
+        "---",
+        f"title: Reminders — {project_id}",
+        "tags:",
+        "  - type/reminder-log",
+        f"  - project/{project_id}",
+        f"created: {created}",
+        "---",
+        "",
+        f"# Reminders — {project_id}",
+        "",
+        "> [!important] Open Reminders",
+        "> Cross-session follow-ups and pending tasks for this project.",
+        "",
+        "## Open",
+        "",
+        "## Completed",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _build_global_reminders_frontmatter(date_stamp: str) -> str:
+    """Build frontmatter for global/cross-project reminders."""
+    lines = [
+        "---",
+        "title: Global Reminders",
+        "tags:",
+        "  - type/reminder-log",
+        f"created: {date_stamp}",
+        "---",
+        "",
+        "# Global Reminders",
+        "",
+        "> [!important] Open Reminders",
+        "> Cross-session follow-ups not tied to a specific project.",
+        "",
+        "## Open",
+        "",
+        "## Completed",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _build_postmortem_frontmatter(project_id: str, created: str) -> str:
+    """Build frontmatter for project post-mortem log."""
+    lines = [
+        "---",
+        f"title: Post-Mortems — {project_id}",
+        "tags:",
+        "  - type/postmortem-log",
+        f"  - project/{project_id}",
+        f"created: {created}",
+        "---",
+        "",
+        f"# Post-Mortems — {project_id}",
+        "",
+        "> [!warning] Failure Learning Log",
+        "> Append-only record of failures, root causes, and prevention actions.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def append_item(
     tag: str,
     content: str,
@@ -114,12 +184,17 @@ def append_item(
     related: Optional[list[str]] = None,
     extra_tags: Optional[list[str]] = None,
     target_project: Optional[str] = None,
+    deadline: Optional[str] = None,
+    severity: Optional[str] = None,
 ) -> None:
     """
     Append a single extracted item to the appropriate Obsidian note.
     Creates frontmatter + title on first write; appends dated sections after.
+
+    For REMINDER: deadline can be a YYYY-MM-DD date string.
+    For POST_MORTEM: severity can be "minor", "moderate", or "major".
     """
-    if tag == "SKIP":
+    if tag not in _TAG_PREFIXES:
         return
 
     if today is None:
@@ -149,6 +224,16 @@ def append_item(
         dest = notes_dir / "daily" / f"{date_stamp}.md"
     elif tag == "PATTERN":
         dest = notes_dir / "concepts" / f"{concept_slug}.md"
+    elif tag == "SUMMARY":
+        dest = notes_dir / "daily" / f"{date_stamp}.md"
+    elif tag == "REMINDER" and effective_pid:
+        dest = notes_dir / "projects" / effective_pid / "reminders.md"
+    elif tag == "REMINDER" and not effective_pid:
+        dest = notes_dir / "reminders.md"
+    elif tag == "POST_MORTEM" and effective_pid:
+        dest = notes_dir / "projects" / effective_pid / "post-mortems.md"
+    elif tag == "POST_MORTEM" and not effective_pid:
+        dest = notes_dir / "daily" / f"{date_stamp}.md"
     else:
         return
 
@@ -161,7 +246,13 @@ def append_item(
     if is_new:
         if tag == "DECISION" and effective_pid:
             parts.append(_build_decisions_frontmatter(effective_pid, date_stamp))
-        elif tag in ("DECISION", "INSIGHT", "EXPLORE") and not effective_pid:
+        elif tag == "REMINDER" and effective_pid:
+            parts.append(_build_reminders_frontmatter(effective_pid, date_stamp))
+        elif tag == "REMINDER" and not effective_pid:
+            parts.append(_build_global_reminders_frontmatter(date_stamp))
+        elif tag == "POST_MORTEM" and effective_pid:
+            parts.append(_build_postmortem_frontmatter(effective_pid, date_stamp))
+        elif tag == "SUMMARY" or (tag in ("DECISION", "INSIGHT", "EXPLORE") and not effective_pid):
             parts.append(_build_daily_frontmatter(date_stamp))
         else:
             title = _titleize(concept_slug)
@@ -181,6 +272,10 @@ def append_item(
     # Dated entry
     parts.append(f"## {date_stamp}")
     parts.append("")
+    if tag == "REMINDER" and deadline:
+        parts.append(f"> [deadline:: {deadline}]")
+    elif tag == "POST_MORTEM" and severity:
+        parts.append(f"> **Severity**: {severity}")
     parts.append(content.strip())
     parts.append("")
     wikilinks = _format_wikilinks(related)
