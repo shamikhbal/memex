@@ -43,6 +43,7 @@ def test_write_default_config_creates_yaml(tmp_path: Path):
     import yaml
     data = yaml.safe_load(config_path.read_text())
     assert data["flush"]["model"] == "claude-haiku-4-5-20251001"
+    assert data["flush"]["max_flush_chars"] == 50000
     assert data["compile"]["model"] == "claude-sonnet-4-6"
     assert data["pre_filter"]["max_context_chars"] == 15000
     assert data["session_start"]["max_inject_chars"] == 20000

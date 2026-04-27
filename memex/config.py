@@ -10,6 +10,7 @@ _DEFAULTS = {
         "provider": "anthropic",
         "model": "claude-haiku-4-5-20251001",
         "base_url": None,
+        "max_flush_chars": 50000,
     },
     "compile": {
         "provider": "anthropic",
@@ -41,6 +42,7 @@ class Config:
     max_context_chars: int = field(init=False)
     max_turns: int = field(init=False)
     max_inject_chars: int = field(init=False)
+    max_flush_chars: int = field(init=False)
     compile_after_hour: int = field(init=False)
 
     def __post_init__(self) -> None:
@@ -61,6 +63,7 @@ class Config:
         self.max_context_chars = data["pre_filter"]["max_context_chars"]
         self.max_turns = data["pre_filter"]["max_turns"]
         self.max_inject_chars = data["session_start"]["max_inject_chars"]
+        self.max_flush_chars = data["flush"]["max_flush_chars"]
         self.compile_after_hour = data["session_start"]["compile_after_hour"]
 
     @property

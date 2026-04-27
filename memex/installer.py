@@ -21,6 +21,7 @@ _DEFAULT_CONFIG = {
         "provider": "anthropic",
         "model": "claude-haiku-4-5-20251001",
         "base_url": None,
+        "max_flush_chars": 50000,
     },
     "compile": {
         "provider": "anthropic",

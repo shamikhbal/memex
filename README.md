@@ -225,6 +225,10 @@ flush:
 Shared settings:
 
 ```yaml
+flush:
+  model: claude-haiku-4-5-20251001
+  max_flush_chars: 50000   # truncate long transcripts before LLM call
+
 pre_filter:
   max_context_chars: 15000
   max_turns: 30
